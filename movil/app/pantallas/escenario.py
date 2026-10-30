@@ -599,14 +599,22 @@ class Escenario(Pantalla):
         if tiempos:
             self._arrancar_pista(tiempos)
             return
-        if self.reproduccion.voz_disponible:
+        try:
+            from karaoke.audio.proceso import whisper_disponible
+
+            con_whisper = whisper_disponible()
+        except Exception:
+            con_whisper = False
+        if self.reproduccion.voz_disponible and con_whisper:
             # Computadora: la IA sincroniza la letra una sola vez (~1 min).
             self._mensaje_pista("Sincronizando la letra con la pista…", "Solo la primera vez · alrededor de un minuto")
             threading.Thread(target=self._sincronizar, args=(codigo, cancion.lineas, ruta), daemon=True).start()
         else:
             # Teléfono: tiempos aproximados (se afinan al abrirla en la computadora).
+            # Teléfono, o computadora sin Whisper: tiempos aproximados.
             self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
-            self.mensaje = "Letra con tiempos aproximados"
+            self.mensaje = ("Tiempos aproximados · para la sincronía exacta: pip install faster-whisper"
+                            if self.reproduccion.voz_disponible else "Letra con tiempos aproximados")
 
     def _sincronizar(self, codigo, lineas, ruta):
         try:
