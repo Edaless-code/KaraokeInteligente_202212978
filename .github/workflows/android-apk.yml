@@ -1,0 +1,82 @@
+name: APK de Android
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "movil/**"
+      - "karaoke/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq git zip unzip openjdk-17-jdk autoconf automake libtool \
+            pkg-config zlib1g-dev libncurses-dev libtinfo6 cmake libffi-dev libssl-dev
+          pip install --upgrade "buildozer==1.5.0" "cython<3.1" setuptools
+
+      - name: Pruebas del núcleo
+        run: |
+          pip install -r requirements.txt pytest
+          python -m pytest -q
+
+      - name: Copiar el núcleo del karaoke dentro de la app
+        run: |
+          rm -rf movil/karaoke
+          cp -r karaoke movil/karaoke
+          find movil -name "__pycache__" -prune -exec rm -rf {} +
+
+      - name: Caché de Buildozer (SDK, NDK y compilaciones)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            movil/.buildozer
+          key: buildozer-${{ hashFiles('movil/buildozer.spec') }}-v1
+
+      - name: Compilar la APK
+        working-directory: movil
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: yes | buildozer -v android debug 2>&1 | tail -n 300
+
+      - name: Verificar la APK
+        run: |
+          ls -la movil/bin/
+          APK=$(ls movil/bin/*.apk | head -n 1)
+          test -f "$APK"
+          cp "$APK" KaraokeInteligente-Android.apk
+          unzip -l KaraokeInteligente-Android.apk | grep -E "AndroidManifest|libpython|assets/private.tar" || true
+
+      - name: Publicar como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: KaraokeInteligente-Android
+          path: KaraokeInteligente-Android.apk
+          retention-days: 30
+
+      - name: Publicar en Releases (solo con etiquetas v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: KaraokeInteligente-Android.apk
