@@ -132,6 +132,7 @@ KV = """
     font_name: T.FUENTE
     font_size: sp(16)
     foreground_color: T.TEXTO
+    disabled_foreground_color: T.TEXTO_2
     hint_text_color: T.TEXTO_3
     cursor_color: T.ACENTO_TEXTO
     selection_color: T.ACENTO_SUAVE
@@ -154,6 +155,9 @@ KV = """
         Line:
             rounded_rectangle: (self.x, self.y, self.width, self.height, T.RADIO_CAMPO)
             width: 1.3 if self.focus else 1
+        # Kivy pinta el texto con el ÚLTIMO color de canvas.before: se restaura.
+        Color:
+            rgba: self.disabled_foreground_color if self.disabled else (self.hint_text_color if not self.text else self.foreground_color)
 
 <Chip>:
     size_hint: None, None
