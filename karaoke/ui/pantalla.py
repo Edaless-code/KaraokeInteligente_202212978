@@ -85,8 +85,7 @@ def componer(vista: VistaKaraoke) -> list[str]:
 
 
 def dibujar(vista: VistaKaraoke) -> None:
-    consola.limpiar()
-    print("\n".join(componer(vista)), flush=True)
+    consola.redibujar(componer(vista))
 
 
 def paginar(

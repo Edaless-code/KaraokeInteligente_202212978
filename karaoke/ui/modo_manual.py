@@ -200,6 +200,13 @@ class ModoManual:
         )
 
     def cantar(self, curso: CancionEnCurso) -> None:
+        consola.entrar_pantalla_completa()
+        try:
+            self._cantar(curso)
+        finally:
+            consola.salir_pantalla_completa()
+
+    def _cantar(self, curso: CancionEnCurso) -> None:
         sesion = self.sesion
         while True:
             dibujar(self.vista(curso))

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 class Transcripcion:
     tipo: str  # "parcial" o "final"
     texto: str
-    canal: str = "libre"  # "libre" o "restringido"
+    canal: str = "libre"  # "libre" (Vosk), "restringido" (Vosk con la letra) o "whisper"
     idioma: str = "es"
     confianza: float = 1.0
     segundo: float = 0.0

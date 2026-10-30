@@ -95,11 +95,24 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "palabras_muestra": "4",
         # Si después de tantas palabras no se reconoce la canción se considera
         # una canción nueva y se empieza a aprender en las tablas temporales.
-        "palabras_cancion_nueva": "14",
+        "palabras_cancion_nueva": "20",
+        # Si alguna canción de la base se parece a lo escuchado (puntaje de al
+        # menos este valor) no se aprende como nueva: se sigue escuchando.
+        "parecido_cancion_conocida": "0.45",
+        # Oculta groserías en lo que transcribe la IA (borradores y "Escuchado").
+        "censurar_transcripcion": "si",
         # Fracción de las palabras de la línea que se deben escuchar para pasar
         # a la siguiente línea (se adelanta un poco para que el público no se
         # atrase).
         "avance_linea": "0.70",
+        # Sincronía con una pista grabada (ver karaoke/sincronia.py): el análisis
+        # va estos segundos ANTES de lo que suena por las bocinas…
+        "segundos_analisis_adelantado": "3.0",
+        # …y la letra se muestra este tiempo antes de que se cante, para
+        # alcanzar a leerla (0 = exactamente cuando suena la voz).
+        "segundos_letra_adelantada": "0.5",
+        # Lo que tardan los motores en reconocer lo que se canta.
+        "segundos_latencia_reconocimiento": "1.0",
         # Segundos de silencio para suspender (ignorar) y para terminar la
         # canción que se aprende.
         "segundos_silencio_pausa": "6",

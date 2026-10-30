@@ -209,7 +209,7 @@ class MotorWhisper(Motor):
             texto = segmento.text.strip()
             if texto and not es_alucinacion(texto):
                 self._resultados.put(Transcripcion(
-                    "final", texto, "libre", informacion.language or self.idioma,
+                    "final", texto, "whisper", informacion.language or self.idioma,
                     float(math.exp(segmento.avg_logprob)), segundo,
                 ))
 

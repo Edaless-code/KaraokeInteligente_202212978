@@ -43,7 +43,7 @@ from .config import Config
 from .db import BaseDatos, Cancion
 from .seguimiento import Evento, Seguidor
 from .sesion import SesionKaraoke
-from .texto import ajustar_linea, normalizar, vocabulario
+from .texto import ajustar_linea, censurar, normalizar, vocabulario
 
 ESPERANDO = "esperando"
 SIGUIENDO = "siguiendo"
@@ -73,7 +73,7 @@ class EstadoPantalla:
 
 class ControladorAutomatico:
     def __init__(self, bd: BaseDatos, buscador: Buscador, config: Config, sesion: SesionKaraoke,
-                 motor_nombre: str = ""):
+                 motor_nombre: str = "", con_whisper: bool = False):
         self.bd = bd
         self.buscador = buscador
         self.config = config
@@ -87,6 +87,8 @@ class ControladorAutomatico:
 
         self.palabras_muestra = config.entero("automatico", "palabras_muestra")
         self.palabras_nueva = config.entero("automatico", "palabras_cancion_nueva")
+        self.parecido_conocida = config.decimal("automatico", "parecido_cancion_conocida")
+        self.censurar = config.booleano("automatico", "censurar_transcripcion")
         self.avance = config.decimal("automatico", "avance_linea")
         self.silencio_pausa = config.decimal("automatico", "segundos_silencio_pausa")
         self.silencio_aprendizaje = config.decimal("automatico", "segundos_silencio_fin_aprendizaje")
@@ -94,8 +96,16 @@ class ControladorAutomatico:
         self.prediccion = config.booleano("automatico", "prediccion_tempo")
         self.restringir_vocabulario = config.booleano("automatico", "vocabulario_restringido")
 
-        # Palabras recientes del canal libre (para identificar) con su segundo.
-        self._recientes: deque[tuple[float, str]] = deque(maxlen=40)
+        # Palabras recientes de CADA motor por separado (Vosk libre y Whisper):
+        # mezclarlas desordena las frases, porque Whisper llega con retraso.
+        self._recientes: dict[str, deque[tuple[float, str]]] = {}
+        # Si se usa Whisper se sabe desde el inicio: así nunca se decide con
+        # el ruido de Vosk mientras llega la primera frase de Whisper.
+        self._hay_whisper = con_whisper
+        self._mejor_parecido = 0.0
+        # Frases completas recientes del motor más confiable: si la canción
+        # resulta nueva, son sus primeras líneas.
+        self._frases: deque[str] = deque(maxlen=12)
         self._parcial_libre: list[str] = []
         self._palabras_sin_identificar = 0
         self._consumidas: dict[str, int] = {}
@@ -141,9 +151,7 @@ class ControladorAutomatico:
         self.sesion.iniciar(cancion, self.seguidor.mostrada)
         self.estado = SIGUIENDO
         self.ultima_coincidencia = self.segundo
-        self._recientes.clear()
-        self._parcial_libre = []
-        self._palabras_sin_identificar = 0
+        self._olvidar_lo_escuchado()
         self._pedir_vocabulario(cancion)
         self.avisar(f"Canción identificada: {cancion.nombre}{' · ' + motivo if motivo else ''}")
 
@@ -157,8 +165,7 @@ class ControladorAutomatico:
         self.cancion = None
         self.seguidor = None
         self.estado = ESPERANDO
-        self._recientes.clear()
-        self._palabras_sin_identificar = 0
+        self._olvidar_lo_escuchado()
         self._pedir_vocabulario(None)
 
     def _prioridad(self) -> dict[int, float]:
@@ -168,10 +175,31 @@ class ControladorAutomatico:
             prioridad.setdefault(ultima, 0.04)  # puede repetir la misma
         return prioridad
 
+    def _olvidar_lo_escuchado(self) -> None:
+        self._recientes.clear()
+        self._parcial_libre = []
+        self._palabras_sin_identificar = 0
+        self._mejor_parecido = 0.0
+        self._frases.clear()
+
     def _identificar(self, palabras: list[str]) -> Resultado | None:
         if len(palabras) < self.palabras_muestra:
             return None
-        return self.buscador.identificar(palabras[-20:], self._prioridad())
+        consulta = palabras[-20:]
+        resultados = self.buscador.buscar(consulta, self._prioridad(), limite=1)
+        if resultados:
+            self._mejor_parecido = max(self._mejor_parecido, resultados[0].puntaje)
+        return self.buscador.identificar(consulta, self._prioridad())
+
+    def _identificar_por_canal(self) -> Resultado | None:
+        """Intenta identificar con lo que escuchó cada motor (por separado) y
+        se queda con el resultado más claro."""
+        mejor = None
+        for recientes in self._recientes.values():
+            resultado = self._identificar([p for _, p in recientes])
+            if resultado and (mejor is None or resultado.orden > mejor.orden):
+                mejor = resultado
+        return mejor
 
     # -------------------------------------------------------- transcripción
     def _nuevas(self, t: Transcripcion) -> list[str]:
@@ -187,30 +215,42 @@ class ControladorAutomatico:
         """Procesa una transcripción (parcial o final) de cualquier canal."""
         if t.canal == "restringido":
             self._hay_restringido = True
+        if t.canal == "whisper":
+            self._hay_whisper = True
         if t.palabras:
             self.ultimo_texto = self.segundo
-            self.escuchado = t.texto
+            self.escuchado = censurar(t.texto) if self.censurar else t.texto
         if self.estado in (IGNORANDO, FIN):
             self._nuevas(t)
             return
-        if t.canal == "libre":
+        if t.canal in ("libre", "whisper"):
             self._recibir_libre(t, retraso)
         else:
             nuevas = self._nuevas(t)
             if self.estado in (SIGUIENDO, PAUSA) and nuevas:
                 self._seguir(nuevas, retraso)
 
+    def _canal_confiable(self, t: Transcripcion) -> bool:
+        """Para decidir que una canción es nueva (y para aprender su letra)
+        se usa el motor más confiable disponible: Whisper si está, si no Vosk."""
+        return t.canal == "whisper" or not self._hay_whisper
+
     def _recibir_libre(self, t: Transcripcion, retraso: float) -> None:
         nuevas = self._nuevas(t)
+        recientes = self._recientes.setdefault(t.canal, deque(maxlen=40))
         for palabra in nuevas:
-            self._recientes.append((self.segundo, palabra))
-        if t.tipo == "final":
+            recientes.append((self.segundo, palabra))
+        if t.tipo == "final" and self._canal_confiable(t):
             self._palabras_sin_identificar += len(t.palabras)
+            if self.estado == ESPERANDO:
+                self._frases.append(t.texto)
 
         if self.estado in (SIGUIENDO, PAUSA):
-            # Con el canal restringido activo, el libre solo da anclas (frases
-            # largas) y sirve para detectar que se cambió de canción.
-            if not self._hay_restringido and nuevas:
+            if t.canal == "whisper":
+                # Frases de Whisper: anclas de posición (llegan con retraso).
+                if t.palabras:
+                    self._seguir(t.palabras, retraso)
+            elif not self._hay_restringido and nuevas:
                 self._seguir(nuevas, retraso)
             elif t.tipo == "final" and len(t.palabras) > 6:
                 self._seguir(t.palabras, retraso)
@@ -218,21 +258,24 @@ class ControladorAutomatico:
                 self._revisar_cambio_de_cancion(t)
             return
 
-        palabras = [p for _, p in self._recientes]
         if self.estado == APRENDIENDO:
-            resultado = self._identificar(palabras)
+            resultado = self._identificar_por_canal()
             if resultado and resultado.evidencia >= self.buscador.evidencia_minima * 1.4:
                 self._iniciar_resultado(resultado, "estaba en la base de datos")
                 return
-            if t.tipo == "final":
+            if t.tipo == "final" and self._canal_confiable(t):
                 self._aprender(t.texto)
             return
 
         # ESPERANDO
-        resultado = self._identificar(palabras)
+        resultado = self._identificar_por_canal()
         if resultado:
             self._iniciar_resultado(resultado)
-        elif self._palabras_sin_identificar >= self.palabras_nueva and t.tipo == "final":
+        elif (t.tipo == "final" and self._canal_confiable(t)
+              and self._palabras_sin_identificar >= self.palabras_nueva
+              and self._mejor_parecido < self.parecido_conocida):
+            # Solo es "nueva" si NINGUNA canción de la base se parece a lo
+            # escuchado; si alguna se parece, se sigue escuchando.
             self._empezar_aprendizaje()
 
     def _iniciar_resultado(self, resultado: Resultado, motivo: str = "") -> None:
@@ -286,14 +329,16 @@ class ControladorAutomatico:
         self.lineas_aprendidas = []
         self._pedir_vocabulario(None)
         self.avisar("Canción NUEVA: se está aprendiendo la letra en las tablas temporales.")
-        # Lo que ya se escuchó también forma parte de la canción.
-        texto = " ".join(p for _, p in self._recientes)
-        if texto:
-            self._aprender(texto)
+        # Las frases que ya se escucharon también son parte de la canción.
+        for frase in self._frases:
+            self._aprender(frase)
+        self._frases.clear()
 
     def _aprender(self, texto: str) -> None:
         if self.id_temporal is None or not texto.strip():
             return
+        if self.censurar:
+            texto = censurar(texto)
         for linea in ajustar_linea(texto.strip(), self.config.caracteres_por_linea, "dividir"):
             self.bd.agregar_linea_temporal(self.id_temporal, linea)
             self.lineas_aprendidas.append(linea)
@@ -315,8 +360,7 @@ class ControladorAutomatico:
         self.id_temporal = None
         self.lineas_aprendidas = []
         self.estado = ESPERANDO
-        self._recientes.clear()
-        self._palabras_sin_identificar = 0
+        self._olvidar_lo_escuchado()
 
     # ------------------------------------------------------------- tiempo
     def tic(self, segundo: float, voz_activa: bool) -> None:
@@ -345,10 +389,12 @@ class ControladorAutomatico:
             self._terminar_aprendizaje()
         elif self.estado == ESPERANDO:
             antiguas = segundo - 20
-            while self._recientes and self._recientes[0][0] < antiguas:
-                self._recientes.popleft()
+            for recientes in self._recientes.values():
+                while recientes and recientes[0][0] < antiguas:
+                    recientes.popleft()
             if segundo - self.ultimo_texto > 10:
                 self._palabras_sin_identificar = 0
+                self._mejor_parecido = 0.0
         if (self.silencio_sesion > 0 and self.estado in (ESPERANDO, PAUSA)
                 and silencio >= self.silencio_sesion):
             self.finalizar()

@@ -78,6 +78,41 @@ def limpiar() -> None:
     sys.stdout.flush()
 
 
+_pantalla_completa = False
+
+
+def entrar_pantalla_completa() -> None:
+    """Pantalla alterna (como vim o htop): no deja historial y se redibuja
+    en su lugar, sin parpadeo ni texto acumulado."""
+    global _pantalla_completa
+    if usar_colores and sys.stdout.isatty() and not _pantalla_completa:
+        sys.stdout.write("\033[?1049h\033[?25l\033[2J\033[H")
+        sys.stdout.flush()
+        _pantalla_completa = True
+
+
+def salir_pantalla_completa() -> None:
+    global _pantalla_completa
+    if _pantalla_completa:
+        sys.stdout.write("\033[?25h\033[?1049l")
+        sys.stdout.flush()
+        _pantalla_completa = False
+
+
+def redibujar(renglones: list[str]) -> None:
+    """Reemplaza el contenido de la pantalla por ``renglones`` sin borrarla
+    primero: cada renglón se escribe encima del anterior y se limpia el resto,
+    así la letra no parpadea."""
+    if _pantalla_completa:
+        alto = shutil.get_terminal_size((80, 24)).lines
+        visibles = renglones[: max(1, alto - 1)]
+        sys.stdout.write("\033[H" + "\n".join(r + "\033[K" for r in visibles) + "\033[J")
+        sys.stdout.flush()
+        return
+    limpiar()
+    print("\n".join(renglones), flush=True)
+
+
 def titulo(texto: str) -> None:
     linea = "═" * min(ancho(), 70)
     print(color(linea, "cian"))

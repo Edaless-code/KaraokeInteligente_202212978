@@ -16,6 +16,7 @@ f finalizar.
 
 from __future__ import annotations
 
+import textwrap
 import time
 from typing import TYPE_CHECKING
 
@@ -23,12 +24,14 @@ from ..audio.fuentes import ErrorAudio, FuenteArchivo, FuenteAudio, FuenteMicrof
 from ..audio.modelos import MODELOS, NOMBRES_IDIOMA, descargar_modelo, modelo_valido, ruta_modelo
 from ..audio.motores import ErrorMotor
 from ..audio.proceso import ProcesadorAudio, crear_limpiador, crear_motores, ruta_relativa
-from ..automatico import APRENDIENDO, ESPERANDO, FIN, IGNORANDO, PAUSA, ControladorAutomatico
+from ..automatico import (APRENDIENDO, ESPERANDO, FIN, IGNORANDO, PAUSA, ControladorAutomatico,
+                          EstadoPantalla)
 from ..sesion import SesionKaraoke
+from ..sincronia import LineaDeTiempo, desfase_pantalla
 from . import consola
 from .consola import color
 from .diagnostico import barra
-from .pantalla import VistaKaraoke, dibujar
+from .pantalla import VistaKaraoke, componer
 
 if TYPE_CHECKING:
     from .menus import Aplicacion
@@ -77,7 +80,9 @@ class ModoAutomatico:
             reproducir = self.teclado.confirmar("¿Reproducir el audio por las bocinas?")
             return FuenteArchivo(ruta, frecuencia, tiempo_real=True, reproducir=reproducir,
                                  desde_segundo=float(desde) if desde.replace(".", "", 1).isdigit() else 0.0,
-                                 aislar_voz=self.config.booleano("audio", "aislar_voz_archivo"))
+                                 aislar_voz=self.config.booleano("audio", "aislar_voz_archivo"),
+                                 retardo_reproduccion=self.config.decimal("automatico",
+                                                                          "segundos_analisis_adelantado"))
         return None
 
     def revisar_modelos(self, idiomas: list[str]) -> None:
@@ -107,7 +112,15 @@ class ModoAutomatico:
     # ------------------------------------------------------------ ejecutar
     def ejecutar(self) -> None:
         if self.bd.contar_canciones() == 0:
-            consola.aviso("No hay canciones en la base de datos. Agréguelas con (f).")
+            consola.limpiar()
+            consola.aviso("La base de datos no tiene canciones: el modo automático no podrá reconocer "
+                          "ninguna y las tratará como canciones nuevas.")
+            ejemplos = self.config.carpeta / "canciones.txt"
+            if ejemplos.exists() and self.teclado.confirmar(f"¿Cargar ahora las canciones de {ejemplos.name}?"):
+                from ..importador import importar_archivo
+
+                resultado = importar_archivo(self.bd, ejemplos, self.config)
+                consola.exito(f"Se cargaron {len(resultado.agregadas)} canción(es).")
         fuente = self.elegir_fuente()
         if fuente is None:
             return
@@ -125,7 +138,8 @@ class ModoAutomatico:
         procesador = ProcesadorAudio(fuente, crear_limpiador(self.config, fuente), motores)
         sesion = SesionKaraoke(self.bd, "automatico")
         control = ControladorAutomatico(self.bd, self.app.buscador, self.config, sesion,
-                                        procesador.nombres_motores)
+                                        procesador.nombres_motores,
+                                        con_whisper=any(m.nombre.lower().startswith("whisper") for m in motores))
         try:
             procesador.iniciar()
         except ErrorAudio as ex:
@@ -133,9 +147,11 @@ class ModoAutomatico:
             sesion.finalizar()
             self.teclado.pausa()
             return
+        consola.entrar_pantalla_completa()
         try:
             self.bucle(procesador, control)
         finally:
+            consola.salir_pantalla_completa()
             procesador.detener()
             control.finalizar()
         if procesador.error:
@@ -147,6 +163,15 @@ class ModoAutomatico:
         ultimo_dibujo = 0.0
         cambio = True
         fin_audio = None
+        self._ultima_pantalla = None
+        # Con una pista que suena por las bocinas el análisis va adelantado y la
+        # pantalla muestra lo que corresponde a lo que se escucha (sincronía).
+        retardo = getattr(procesador.fuente, "retardo", 0.0)
+        linea_tiempo: LineaDeTiempo[EstadoPantalla] = LineaDeTiempo(desfase_pantalla(
+            retardo,
+            self.config.decimal("automatico", "segundos_letra_adelantada"),
+            self.config.decimal("automatico", "segundos_latencia_reconocimiento")))
+        segundo = 0.0
         while control.estado != FIN:
             # 1. Resultados del audio.
             while not procesador.cola.empty():
@@ -156,29 +181,36 @@ class ModoAutomatico:
                     control.recibir(t, retraso=max(0.0, resultado.segundo - t.segundo))
                     cambio = True
                 control.tic(resultado.segundo, resultado.voz)
+                segundo = resultado.segundo
+                linea_tiempo.guardar(segundo, control.pantalla())
                 if resultado.terminado and fin_audio is None:
                     fin_audio = time.monotonic()
             if control.vocabulario_pedido is not None:
                 procesador.pedir_vocabulario(*control.vocabulario_pedido)
                 control.vocabulario_pedido = None
-            # 2. Teclas del operador.
+            # 2. Teclas del operador (se ven de inmediato, sin el desfase).
             tecla = self.teclado.tecla(0.05)
             if tecla:
                 cambio = True
                 if not control.comando(tecla):
                     break
-            # 3. Pantalla (como mucho 5 veces por segundo).
+                linea_tiempo.reiniciar(control.pantalla())
+            # 3. Pantalla: se redibuja en su lugar y solo si algo cambió (como
+            #    mucho 4 veces por segundo), para que la letra sea fácil de seguir.
             ahora = time.monotonic()
-            if cambio or ahora - ultimo_dibujo > 0.5:
-                self.dibujar(control, procesador, nivel, voz)
+            if cambio or ahora - ultimo_dibujo > 0.1:
+                # Terminado el análisis, el reloj sigue corriendo con la pista.
+                reloj = segundo + (ahora - fin_audio if fin_audio is not None else 0.0)
+                pantalla = linea_tiempo.foto(reloj) or control.pantalla()
+                self.dibujar(pantalla, procesador, nivel, voz)
                 ultimo_dibujo, cambio = ahora, False
-            if fin_audio is not None and ahora - fin_audio > 2:
+            # Al terminar el análisis todavía suena el final de la pista.
+            if fin_audio is not None and ahora - fin_audio > 2 + retardo:
                 control.avisar("Terminó el archivo de audio.")
                 break
 
-    def dibujar(self, control: ControladorAutomatico, procesador: ProcesadorAudio,
+    def dibujar(self, pantalla: EstadoPantalla, procesador: ProcesadorAudio,
                 nivel: float, voz: bool) -> None:
-        pantalla = control.pantalla()
         estado = ESTADOS.get(pantalla.estado, pantalla.estado.upper())
         detalles = [f"Escuchado: {pantalla.escuchado[-70:]}" if pantalla.escuchado else "Escuchado: …",
                     f"Sonido {barra(nivel, 20)} {'VOZ' if voz else '   '} · {procesador.fuente.nombre} · "
@@ -195,24 +227,28 @@ class ModoAutomatico:
                 previas=self.config.entero("pantalla", "lineas_previas"),
                 siguientes=self.config.entero("pantalla", "lineas_siguientes"),
             )
-            dibujar(vista)
+            self._mostrar(componer(vista))
             return
-        consola.limpiar()
-        consola.titulo("KARAOKE INTELIGENTE · modo automático")
-        print()
-        print(color(f"  {estado}", "negrita", "amarillo" if pantalla.estado != APRENDIENDO else "magenta"))
-        print()
+        ancho = min(consola.ancho(), 100)
+        renglones = [color("═" * ancho, "cian"),
+                     color("  KARAOKE INTELIGENTE · modo automático", "negrita", "cian"),
+                     color("═" * ancho, "cian"), "",
+                     color(f"  {estado}", "negrita", "amarillo" if pantalla.estado != APRENDIENDO else "magenta"),
+                     ""]
         if pantalla.estado == APRENDIENDO:
-            print(color("  Letra aprendida hasta ahora:", "tenue"))
-            for linea in pantalla.aprendidas:
-                print(f"    {linea}")
-            print()
-        for aviso in pantalla.avisos[-3:]:
-            consola.aviso(f"  {aviso}")
-        for detalle in detalles:
-            print(color(f"  {detalle}", "tenue"))
-        print(color("─" * min(consola.ancho(), 100), "cian"))
-        print(color(f"  {AYUDA}", "cian"))
+            renglones.append(color("  Borrador de la letra (se revisa después en f → v):", "tenue"))
+            renglones += [f"    {linea}" for linea in pantalla.aprendidas]
+            renglones.append("")
+        renglones += [color(f"  {aviso}", "amarillo") for aviso in pantalla.avisos[-3:]]
+        renglones += [color(f"  {detalle}", "tenue") for detalle in detalles]
+        renglones.append(color("─" * ancho, "cian"))
+        renglones += [color("  " + parte, "cian") for parte in textwrap.wrap(AYUDA, ancho - 2)]
+        self._mostrar(renglones)
+
+    def _mostrar(self, renglones: list[str]) -> None:
+        if renglones != self._ultima_pantalla:
+            self._ultima_pantalla = renglones
+            consola.redibujar(renglones)
 
     def resumen(self, sesion: SesionKaraoke) -> None:
         consola.limpiar()

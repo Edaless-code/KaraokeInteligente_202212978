@@ -216,8 +216,13 @@ class FuenteArchivo(FuenteAudio):
         reproducir: bool = False,
         desde_segundo: float = 0.0,
         aislar_voz: bool = False,
+        retardo_reproduccion: float = 0.0,
     ):
+        """``retardo_reproduccion``: segundos que las bocinas van detrás del
+        análisis, para que la letra se calcule antes de que suene la voz
+        (ver ``karaoke.sincronia``)."""
         self.aislar_voz = aislar_voz
+        self.retardo = max(0.0, retardo_reproduccion) if reproducir else 0.0
         self.ruta = Path(ruta)
         self.frecuencia = frecuencia
         self.tiempo_real = tiempo_real
@@ -249,6 +254,8 @@ class FuenteArchivo(FuenteAudio):
             frecuencia = 44100
             pista = leer_archivo_audio(self.ruta, frecuencia, canales=2)
             pista = pista[int(self.desde * frecuencia) :]
+            if self.retardo:  # silencio inicial: el análisis va adelante
+                pista = np.concatenate([np.zeros((int(self.retardo * frecuencia), 2), dtype=np.float32), pista])
             posicion = [0]
 
             def al_pedir(salida, cuadros, _tiempo, _estado):
@@ -265,6 +272,7 @@ class FuenteArchivo(FuenteAudio):
             self._flujo = None
             self.reproducir = False
             self.error_reproduccion = str(ex)
+            self.retardo = 0.0
 
     @property
     def segundo_actual(self) -> float:

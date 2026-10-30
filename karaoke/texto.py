@@ -163,3 +163,17 @@ def vocabulario(lineas: list[str], idioma: str = "es") -> set[str]:
             if idioma == "en" and palabra in _CONTRACCIONES:
                 resultado.add(_CONTRACCIONES[palabra])
     return resultado
+
+
+# Palabras ofensivas que se ocultan en lo que transcribe la IA (que a veces
+# entiende mal la letra cantada). Nunca afecta a la letra guardada por el usuario.
+_GROSERIAS = re.compile(
+    r"\b(bitch(es)?|fuck(ing|er|ed)?|shit|asshole|bastard|dick|cunt|whore|nigga|"
+    r"puta|puto|mierda|pendej[oa]s?|cabr[oó]n|verga|chinga\w*|culer[oa]|joto|marica)\b",
+    re.IGNORECASE,
+)
+
+
+def censurar(texto: str) -> str:
+    """Oculta las groserías dejando la primera letra: "bitch" -> "b****"."""
+    return _GROSERIAS.sub(lambda m: m.group(0)[0] + "*" * (len(m.group(0)) - 1), texto)

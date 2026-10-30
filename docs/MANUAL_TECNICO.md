@@ -284,9 +284,16 @@ El `Seguidor` mantiene la **posición** (la siguiente palabra a cantar) y la **l
    - **Improvisaciones** ("oh yeah"): se ignoran porque no alinean con la letra.
    - **Partes instrumentales:** no se predice si no se reconocen palabras, porque con música mezclada el detector de energía solo no basta.
 
+8. **Letra adelantada a la voz con pistas grabadas (`karaoke/sincronia.py`).** Los motores reconocen una palabra después de oírla (Vosk ~1 s, Whisper varios segundos), así que mostrar la letra al reconocerla haría que la voz siempre fuera adelantada. Con un archivo de audio se trabaja como un reproductor con subtítulos:
+   - el análisis lee la pista `segundos_analisis_adelantado` (3 s) **antes** de que suene por las bocinas;
+   - cada estado de la pantalla se guarda con su segundo de análisis;
+   - se muestra el estado de lo que se canta `segundos_letra_adelantada` (0.5 s) después de lo que suena, descontando `segundos_latencia_reconocimiento` (1 s). La pantalla va `3 − 0.5 − 1 = 1.5 s` detrás del análisis.
+   - Las teclas del operador se ven al instante, sin ese retraso.
+   - Con el micrófono no se puede retrasar al cantante: la letra se adelanta con el avance anticipado, la predicción por tempo y las líneas siguientes visibles.
+
 ### 5.5 Canciones nuevas (aprendizaje)
 
-Si se acumulan 14 palabras (`palabras_cancion_nueva`) sin que ninguna canción alcance la evidencia mínima:
+Solo se considera **nueva** si se acumulan 20 palabras (`palabras_cancion_nueva`) del motor más confiable (Whisper si está, si no Vosk) y **ninguna** canción de la base se parece a lo escuchado (puntaje menor que `parecido_cancion_conocida`, 0.45). Cada motor se analiza por separado, para que el ruido de Vosk no se mezcle con las frases correctas de Whisper. Las groserías que la IA transcribe por error se ocultan (`censurar_transcripcion`). Entonces:
 
 1. Se crea un registro en `TEMP_NOMBRES` y cada frase que entrega el canal libre se guarda como una línea en `TEMP_LETRAS`. Las frases de Vosk terminan en las pausas naturales del canto, que suelen coincidir con las líneas, y se dividen si pasan de 80 caracteres.
 2. Termina con 8 s de silencio o con la tecla **t**.

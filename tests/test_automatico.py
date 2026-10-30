@@ -26,16 +26,29 @@ LLUVIA = [
 ]
 
 
-@pytest.fixture
-def entorno(tmp_path):
-    config = cargar_config(tmp_path)
+def _crear_entorno(carpeta, con_whisper=False):
+    config = cargar_config(carpeta)
     bd = BaseDatos(config.ruta_bd)
     sound = bd.agregar_cancion("Sound of You", SOUND)
     lluvia = bd.agregar_cancion("Lluvia de papel", LLUVIA)
     buscador = Buscador(bd, config)
     sesion = SesionKaraoke(bd, "automatico")
-    control = ControladorAutomatico(bd, buscador, config, sesion, "simulado")
-    yield control, bd, {"sound": sound, "lluvia": lluvia}
+    control = ControladorAutomatico(bd, buscador, config, sesion, "simulado", con_whisper=con_whisper)
+    return control, bd, {"sound": sound, "lluvia": lluvia}
+
+
+@pytest.fixture
+def entorno(tmp_path):
+    control, bd, codigos = _crear_entorno(tmp_path)
+    yield control, bd, codigos
+    bd.cerrar()
+
+
+@pytest.fixture
+def entorno_hibrido(tmp_path):
+    """Como en Windows: Vosk (libre) y Whisper trabajando a la vez."""
+    control, bd, codigos = _crear_entorno(tmp_path, con_whisper=True)
+    yield control, bd, codigos
     bd.cerrar()
 
 
@@ -132,3 +145,49 @@ def test_descarta_aprendizajes_muy_cortos(entorno):
     control, bd, _ = entorno
     correr(control, "0:01 im not going to do it oh no no no no no no no no no no no", 30)
     assert bd.listar_temporales() == []
+
+
+def test_no_mezcla_motores_y_no_aprende_una_cancion_conocida(entorno_hibrido):
+    """El caso real que se vio en Windows: Vosk entrega mucho ruido mientras
+    Whisper entrega la letra correcta con segundos de retraso. Debe
+    identificar la canción y NUNCA tratarla como nueva."""
+    from karaoke.transcripcion import Transcripcion
+
+    control, bd, codigos = entorno_hibrido
+    basura = "the and you may good oh hey yeah do that the thing".split()
+    segundo = 0.0
+    for paso in range(60):
+        segundo += 0.5
+        control.tic(segundo, True)
+        control.recibir(Transcripcion("final", " ".join(basura[paso % 6: paso % 6 + 4]), "libre", "en"))
+        if paso == 20:
+            control.recibir(Transcripcion("final", "And everything I do, it seems that you follow me everywhere",
+                                          "whisper", "en"), retraso=4.0)
+        if control.estado == SIGUIENDO:
+            break
+    assert control.estado == SIGUIENDO
+    assert control.cancion.codigo == codigos["sound"]
+    assert bd.listar_temporales() == []
+
+
+def test_no_aprende_si_se_parece_a_una_cancion_de_la_base(entorno):
+    from karaoke.transcripcion import Transcripcion
+
+    control, bd, _ = entorno
+    control.tic(0.5, True)
+    for numero in range(8):  # frases muy parecidas a Sound of You, pero con errores
+        control.tic(1 + numero * 3, True)
+        control.recibir(Transcripcion("final", "I hear the sound of oh you in every ring I do", "whisper", "en"))
+    assert control.estado != APRENDIENDO
+    assert bd.listar_temporales() == []
+
+
+def test_censura_groserias_en_lo_escuchado(entorno):
+    from karaoke.texto import censurar
+    from karaoke.transcripcion import Transcripcion
+
+    control, _, _ = entorno
+    control.recibir(Transcripcion("final", "I don't wanna lose, yeah, but I am a bitch.", "whisper", "en"))
+    assert "bitch" not in control.escuchado and "b****" in control.escuchado
+    assert censurar("Eres una PUTA mierda") == "Eres una P*** m*****"
+    assert censurar("Bitchin is not filtered but bitch is") == "Bitchin is not filtered but b**** is"

@@ -75,7 +75,8 @@ def main(argumentos: list[str] | None = None) -> int:
             fuente.iniciar()
             duracion = fuente.duracion
         nombres = " + ".join(m.nombre for m in motores)
-        control = ControladorAutomatico(bd, buscador, config, sesion, nombres)
+        control = ControladorAutomatico(bd, buscador, config, sesion, nombres,
+                                        con_whisper=any(m.nombre.lower().startswith("whisper") for m in motores))
         print(f"Audio: {opciones.audio or opciones.guion} ({duracion:.0f} s) · motores: {nombres}")
 
         procesador = ProcesadorAudio(fuente, crear_limpiador(config, fuente) if fuente else None, motores) \
