@@ -1,0 +1,474 @@
+# Manual técnico · Karaoke Inteligente
+
+**Carné:** 202212978 · **Versión:** 1.0.0 · **Lenguaje:** Python 3.11+ · **Base de datos:** SQLite
+
+Este documento explica cómo está construido el programa y cómo se resolvió el modo automático. También reúne **todo lo necesario para que el docente lo ponga a funcionar** y las **suposiciones** que se hicieron donde la especificación dejaba decisiones abiertas.
+
+---
+
+## Contenido
+
+1. [Puesta en marcha para el docente](#1-puesta-en-marcha-para-el-docente)
+2. [Arquitectura y módulos](#2-arquitectura-y-módulos)
+3. [Base de datos CANCIONES](#3-base-de-datos-canciones)
+4. [Búsqueda de canciones por palabras](#4-búsqueda-de-canciones-por-palabras)
+5. [Modo automático: cómo se resolvió](#5-modo-automático-cómo-se-resolvió)
+6. [Limpieza del sonido](#6-limpieza-del-sonido)
+7. [Evaluación con canciones reales](#7-evaluación-con-canciones-reales)
+8. [Configuración (`karaoke.ini`)](#8-configuración-karaokeini)
+9. [Pruebas automatizadas e integración continua](#9-pruebas-automatizadas-e-integración-continua)
+10. [Construcción del ejecutable de Windows](#10-construcción-del-ejecutable-de-windows)
+11. [Versión para Android](#11-versión-para-android)
+12. [Suposiciones y decisiones de diseño](#12-suposiciones-y-decisiones-de-diseño)
+13. [Limitaciones conocidas y mejoras futuras](#13-limitaciones-conocidas-y-mejoras-futuras)
+
+---
+
+## 1. Puesta en marcha para el docente
+
+### Windows con el ejecutable (sin instalar nada)
+
+1. Descargue `KaraokeInteligente-Windows.zip`, de *Releases* o de *Actions → Ejecutable de Windows → Artifacts*, y extráigalo.
+2. Ejecute `KaraokeInteligente.exe`. Los modelos de voz ya vienen en la carpeta `modelo\`.
+3. En el menú, escriba `f` → `t` → Enter → Enter para cargar las canciones de ejemplo. Después `m` (manual) o `a` (automático).
+4. Para comprobar el modo automático **sin micrófono**, ejecute en PowerShell, dentro de la carpeta del programa:
+
+   ```powershell
+   .\KaraokeInteligente.exe --simular ejemplos\Ghost_of_you_Remastered.mp3
+   ```
+
+   Imprime con su tiempo cada decisión de la IA: canción identificada, cambios de línea, pausas y fin.
+
+### Desde el código fuente (Windows, Linux o macOS)
+
+```bash
+git clone https://github.com/Edaless-code/KaraokeInteligente_202212978.git
+cd KaraokeInteligente_202212978
+pip install -r requirements.txt
+pip install faster-whisper          # opcional, mejora el modo automático
+python main.py                      # programa interactivo
+python -m pytest                    # 135 pruebas automatizadas
+```
+
+Los modelos de Vosk se descargan desde el propio programa la primera vez: el modo automático lo ofrece y también la opción *d*. También se pueden copiar a mano en `modelo/`:
+
+| Idioma | Modelo | Tamaño |
+|---|---|---|
+| Español | [`vosk-model-small-es-0.42`](https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip) | 39 MB |
+| Inglés | [`vosk-model-small-en-us-0.15`](https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip) | 40 MB |
+| Whisper base | `Systran/faster-whisper-base` | 145 MB, se descarga solo |
+
+### Dependencias
+
+| Paquete | Uso |
+|---|---|
+| `numpy` | Procesamiento de la señal (STFT, filtros, ganancia) |
+| `sounddevice` | Micrófono y bocinas (PortAudio) |
+| `miniaudio` | Lectura de MP3, WAV, FLAC y OGG sin ffmpeg |
+| `vosk` | Reconocimiento de voz sin internet, en tiempo real |
+| `faster-whisper` *(opcional)* | Whisper optimizado para CPU |
+
+`sqlite3`, `argparse`, `configparser`, `difflib`, `threading` y `wave` vienen con Python.
+
+---
+
+## 2. Arquitectura y módulos
+
+El programa está en capas. El núcleo (datos, búsqueda y lógica del karaoke) **no depende de la interfaz**, de modo que la misma lógica la usan la consola de Windows, la herramienta sin pantalla y la versión de Android.
+
+```
+                    ┌───────────────────────────────────────────┐
+  Interfaz          │ ui/menus.py   ui/modo_manual.py           │
+  (consola)         │ ui/modo_automatico.py   ui/diagnostico.py │
+                    │ ui/pantalla.py   ui/consola.py            │
+                    └──────────────┬────────────────────────────┘
+                                   │
+  Lógica del        ┌──────────────▼────────────────────────────┐
+  karaoke           │ sesion.py   programa.py   automatico.py   │
+                    │ seguimiento.py   buscador.py              │
+                    └──────────────┬────────────────────────────┘
+                                   │
+  Datos y audio     ┌──────────────▼──────────────┐ ┌────────────────────────────┐
+                    │ db.py   importador.py        │ │ audio/fuentes.py           │
+                    │ texto.py   config.py         │ │ audio/limpieza.py          │
+                    └──────────────────────────────┘ │ audio/motores.py           │
+                                                     │ audio/modelos.py           │
+                                                     │ audio/proceso.py           │
+                                                     └────────────────────────────┘
+```
+
+| Módulo | Responsabilidad |
+|---|---|
+| `main.py`, `karaoke/app.py` | Arranque: lee la configuración, detecta o crea la base de datos y abre el menú. Opciones `--carpeta`, `--simular` y `--version` |
+| `karaoke/config.py` | Lee y crea `karaoke.ini`. Todos los parámetros ajustables con sus valores por omisión |
+| `karaoke/texto.py` | Normalización (minúsculas, sin tildes, conserva la ñ), semejanza de palabras, división de líneas largas, lectura de archivos UTF-8/ANSI, etiquetas de sección, idioma y vocabulario para el reconocedor |
+| `karaoke/db.py` | Acceso a SQLite: esquema, canciones, tablas temporales, programa, sesiones e historial |
+| `karaoke/importador.py` | Opción *f → t*: lee el archivo de canciones en sus dos formatos |
+| `karaoke/buscador.py` | Índice en memoria y alineamiento Smith-Waterman tolerante a errores (sección 4) |
+| `karaoke/programa.py` | Archivo PROGRAMA y cursor de orden flexible |
+| `karaoke/sesion.py` | Canción en curso y sesión (c, i, r, g, s, a), común a los dos modos |
+| `karaoke/seguimiento.py` | `Seguidor`: posición del cantante dentro de la letra (sección 5.4) |
+| `karaoke/automatico.py` | `ControladorAutomatico`: máquina de estados del modo automático (sección 5.3) |
+| `karaoke/simulacion.py` | Modo automático sin pantalla (`--simular`) para pruebas y demostraciones |
+| `karaoke/audio/fuentes.py` | Micrófono (`sounddevice`) y archivos de audio (`miniaudio`) al ritmo real |
+| `karaoke/audio/limpieza.py` | Filtro pasa banda, sustracción espectral, detector de voz, AGC y aislamiento de voz estéreo |
+| `karaoke/audio/motores.py` | `MotorVosk`, `MotorWhisper` y `MotorSimulado` con una misma interfaz |
+| `karaoke/audio/modelos.py` | Ubicación, validación y descarga de los modelos de Vosk |
+| `karaoke/audio/proceso.py` | Cadena fuente → limpieza → motores en un hilo aparte |
+| `karaoke/ui/*` | Menús, pantalla del karaoke, modos manual y automático, diagnóstico de audio |
+| `herramientas/transcribir.py` | Mide la transcripción de un audio con cada motor (sección 7) |
+| `herramientas/simular_automatico.py` | Atajo para `karaoke/simulacion.py` |
+
+**Concurrencia.** El audio se captura, se limpia y se transcribe en un hilo aparte (`ProcesadorAudio`), que deja los resultados en una cola. El hilo principal lee la cola, aplica las decisiones, atiende el teclado y redibuja la pantalla. **Todas las escrituras a la base de datos ocurren en el hilo principal**, así que no hay condiciones de carrera sobre SQLite. Whisper, que es más lento, trabaja en su propio hilo con una cola de una sola ventana: si sigue ocupado, se descarta la ventana y la pantalla no se retrasa.
+
+---
+
+## 3. Base de datos CANCIONES
+
+Archivo: **`CANCIONES.db`**, junto al programa. El nombre se configura en `[base_datos] archivo`.
+
+**Detección.** Al arrancar se revisa si el archivo existe y no está vacío.
+- **No existe:** se crean todas las tablas (`CREATE TABLE IF NOT EXISTS`).
+- **Existe:** se prepara para usarla: se activan las claves foráneas, se crean las tablas que falten (por ejemplo, si viene de otra versión), se ejecuta `PRAGMA quick_check` y se cierran las sesiones que quedaron abiertas por un cierre inesperado.
+
+### Tablas de la especificación (con campos agregados)
+
+**`NOMBRES`**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `codigo` | INTEGER PK AUTOINCREMENT | Código de la canción, **generado automáticamente**. `AUTOINCREMENT` garantiza que nunca se reutiliza un código borrado |
+| `nombre_cancion` | TEXT | Nombre tal como se escribió |
+| `nombre_normalizado` | TEXT UNIQUE | *(agregado)* Nombre sin tildes ni mayúsculas, para evitar duplicados ("Canción" = "cancion") |
+| `artista` | TEXT | *(agregado)* Opcional |
+| `idioma` | TEXT | *(agregado)* `es` o `en`, detectado de la letra; elige el modelo de voz |
+| `origen` | TEXT | *(agregado)* `archivo`, `manual` o `automatico` |
+| `fecha_registro` | TEXT | *(agregado)* |
+| `veces_cantada` | INTEGER | *(agregado)* Cuenta las interpretaciones completas |
+
+**`LETRAS`**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | INTEGER PK | *(agregado)* |
+| `codigo` | INTEGER FK → `NOMBRES` **ON DELETE CASCADE** | Enlaza la línea con su canción. Al borrar la canción se borra toda su letra |
+| `numero_linea` | INTEGER | *(agregado)* Orden de la línea. `UNIQUE(codigo, numero_linea)` |
+| `linea` | TEXT | La línea de la letra |
+| `linea_normalizada` | TEXT | *(agregado)* La línea normalizada, para buscar |
+
+### Tablas agregadas
+
+| Tabla | Campos | Para qué |
+|---|---|---|
+| `TEMP_NOMBRES` | `id_temporal`, `nombre_sugerido`, `fecha_registro`, `motor`, `estado` | Canciones **aprendidas** por el modo automático que aún no se revisan |
+| `TEMP_LETRAS` | `id`, `id_temporal` (FK, cascada), `numero_linea`, `linea`, `confianza` | Letra transcrita de esas canciones |
+| `PROGRAMA` | `orden`, `nombre_solicitado`, `codigo` (FK, `ON DELETE SET NULL`), `estado` | Programa del cantante: `pendiente`, `cantada` o `saltada` |
+| `SESIONES` | `id_sesion`, `modo`, `inicio`, `fin` | Cada sesión de karaoke |
+| `HISTORIAL` | `id`, `id_sesion`, `codigo`, `nombre_cancion`, `modo`, `inicio`, `fin`, `lineas_mostradas`, `completada` | Cada interpretación, para la opción *h* |
+| `METADATOS` | `clave`, `valor` | Versión del esquema y fecha de creación |
+
+> **Tablas temporales.** Son tablas **permanentes de "pendientes"**, no `CREATE TEMP TABLE` de SQLite. Una tabla TEMP desaparece al cerrar la conexión, y la especificación pide poder **corregir la letra y averiguar el nombre después**, quizás en otra sesión. La revisión se hace en *f → v*, y `promover_temporal()` las pasa a `NOMBRES`/`LETRAS`.
+
+**Nombres de los campos.** Se usaron sin tildes (`codigo`, `nombre_cancion`, `linea`). SQLite acepta tildes en los identificadores, pero muchas herramientas y controladores fallan con ellas.
+
+---
+
+## 4. Búsqueda de canciones por palabras
+
+`Buscador` (`karaoke/buscador.py`) resuelve "con dos o tres palabras, ¿qué canción es y en qué línea va?". Lo usan el modo manual, con lo que escribe el operador, y el automático, con lo que transcribe la IA.
+
+1. **Índice en memoria.** Al arrancar y cada vez que la base cambia, se carga cada letra como una secuencia de palabras normalizadas, junto con la línea a la que pertenece cada palabra. Se mantiene un índice invertido palabra → canciones.
+2. **Peso de cada palabra (tipo IDF).** Una palabra que aparece en muchas líneas ("la", "de", "the", "you") pesa poco. Una poco frecuente ("contrabando", "everywhere") pesa mucho: `peso = clamp(log(1 + N/df)/2, 0.35, 2.0)`.
+3. **Tolerancia a errores.** Dos palabras coinciden si su semejanza (`difflib.SequenceMatcher`) es al menos `semejanza_palabra` (0.78). Así "negos" coincide con "negros" y "everiwere" con "everywhere".
+4. **Candidatas.** Solo se alinean las canciones que comparten al menos el 25 % del peso de la consulta (como máximo 60).
+5. **Alineamiento local Smith-Waterman** entre la consulta y la letra completa:
+   - coincidencia: `+peso × semejanza`; palabra diferente: `−peso`;
+   - palabra de la letra que no se escuchó: `−0.15 × peso medio`;
+   - palabra escuchada que no está en la letra: `−0.5 × peso`.
+
+   Respeta el **orden** de las palabras pero permite huecos, así que una palabra mal escuchada no impide encontrar la canción. Se recorre la consulta contra la letra completa, de modo que también encuentra frases **que cruzan dos líneas**.
+6. **Resultado:** puntaje de 0 a 1 (peso alineado entre peso total), línea de inicio y de fin, posición de la siguiente palabra y **evidencia** (peso bruto alineado).
+7. **Identificación segura** (`identificar`). Se acepta una canción solo si:
+   - el puntaje es al menos `puntaje_minimo` (0.55);
+   - la evidencia es al menos `evidencia_minima` (2.5, unas tres palabras significativas), para que "the" o "la" solas no identifiquen nada;
+   - le saca un margen de 0.08 a la segunda canción.
+
+   La **siguiente canción del PROGRAMA** recibe un bono de 0.12 que se usa para ordenar y desempatar.
+
+---
+
+## 5. Modo automático: cómo se resolvió
+
+### 5.1 Elección del reconocedor de voz
+
+Se compararon varias opciones gratuitas, todas sin internet:
+
+| Opción | Ventajas | Desventajas | Decisión |
+|---|---|---|---|
+| **Vosk (Kaldi)** | Tiempo real con **resultados parciales** mientras se canta. Modelos de 40 MB. **Vocabulario restringible** en tiempo de ejecución. Existe para Windows, Linux y **Android** | Con música mezclada reconoce poco | ✅ Seguimiento línea por línea |
+| **Whisper (faster-whisper)** | Entiende muy bien la voz **con música de fondo**. Detecta el idioma, incluso en canciones bilingües | Trabaja por ventanas de segundos, sin resultados parciales; modelo de 145 MB | ✅ Identificación y anclas de posición |
+| Windows Speech (SAPI) | Viene en Windows | Dictado de baja calidad, sin control del vocabulario, solo Windows | ❌ |
+| APIs en la nube | Alta precisión | Requieren internet y cuenta; costo | ❌ |
+
+**Diseño híbrido.** Whisper identifica la canción y cada pocos segundos confirma en qué parte va. Vosk, con el vocabulario restringido a la letra, sigue palabra por palabra en tiempo real. Si Whisper no está instalado, todo funciona solo con Vosk. Se elige en `[audio] motor = hibrido | vosk | whisper | simulado`.
+
+### 5.2 Cadena de procesamiento
+
+```
+micrófono / archivo ─► limpieza del sonido ─┬─► Vosk canal LIBRE (es, en) ──────────┐
+   (16 kHz mono)       (sección 6)          ├─► Vosk canal RESTRINGIDO a la letra ──┼─► ControladorAutomatico ─► pantalla
+                       + detector de voz    └─► Whisper (ventanas de 6 s) ──────────┘         ▲
+                                                                                    teclado (correcciones)
+```
+
+**Vosk con dos canales sobre el mismo audio:**
+- **Libre:** reconoce cualquier palabra del idioma. Sirve para identificar y para aprender canciones nuevas.
+- **Restringido:** cuando ya se sabe qué canción es, se crea un reconocedor con una **gramática que contiene solo las palabras de esa letra**, más `[unk]` para todo lo demás. La voz cantada se reconoce mucho peor que la hablada, y limitar el vocabulario a unas decenas de palabras hace que lo reconocido casi siempre sea de la letra. Las palabras se pasan **con tildes**, porque así las conoce el modelo, y para el inglés se agregan las contracciones ("dont" → "don't").
+
+### 5.3 Máquina de estados (`ControladorAutomatico`)
+
+```
+             identifica (evidencia suficiente)
+ ESPERANDO ─────────────────────────────────────► SIGUIENDO ◄────┐
+    │  ▲                                           │    │        │ vuelve la voz
+    │  │ terminó la canción / x                    │    │ 6 s sin voz y letra
+    │  └───────────────────────────────────────────┘    ▼        │
+    │ ≥14 palabras sin identificar                       PAUSA ───┘
+    ▼
+ APRENDIENDO ── 8 s de silencio o t ──► guarda en TEMP_* con nombre sugerido ──► ESPERANDO
+ (en cualquier estado)  g ─► IGNORANDO ─ s ─► estado anterior      f ─► FIN
+```
+
+Así se automatizan las acciones del modo manual:
+
+| Manual | Automático |
+|---|---|
+| Teclear 2-3 palabras | Se juntan las últimas palabras del canal libre y de Whisper (unos 20 s) y se identifica en cuanto hay evidencia suficiente, con bono para la siguiente del PROGRAMA y un bono menor para repetir la última |
+| **c** continuar | El `Seguidor` avanza cuando se cantó el 70 % de la línea |
+| **i** igual | El `Seguidor` detecta que las palabras volvieron al inicio de la misma línea |
+| **r** repetir | Se detecta el inicio de la canción después de haber avanzado. Si la canción terminó, el bono de "última cantada" la identifica de nuevo |
+| **g** ignorar / **s** seguir | Pausa automática tras `segundos_silencio_pausa` sin palabras reconocidas, y reanudación en cuanto la letra vuelve a coincidir |
+| **f** finalizar | Tecla **f**, o silencio prolongado si `segundos_silencio_fin_sesion > 0` |
+| Elegir del PROGRAMA | Bono de prioridad; tecla **n** para forzarla. La canción cantada se marca aunque se rompa el orden |
+| *(nuevo)* Canción desconocida | Estado **APRENDIENDO** (sección 5.5) |
+
+Si la letra deja de coincidir durante más de 8 s y una frase larga pertenece con claridad a **otra canción**, se cambia a esa canción: el cantante cambió de canción.
+
+### 5.4 Sincronización con el cantante (`Seguidor`)
+
+El `Seguidor` mantiene la **posición** (la siguiente palabra a cantar) y la **línea mostrada**:
+
+1. **Alineamiento local que termina en la última palabra escuchada.** Las últimas 8 palabras reconocidas se alinean contra una ventana: la línea anterior, la actual y las dos siguientes. Se exige que el alineamiento termine en la palabra más reciente, porque al seguir a un cantante importa dónde está *ahora* y no la coincidencia más larga del pasado. Se encontró con *Sound of You*: sus líneas 3 y 4 empiezan con "It seems that you…", y sin esa condición el seguidor saltaba a la línea equivocada.
+2. **Avance anticipado.** Se muestra la siguiente línea cuando ya se cantó el 70 % de la actual (`avance_linea`), para que el público la lea a tiempo.
+3. **Repeticiones.** Si las palabras regresan al inicio de la línea actual o anterior, es una línea **igual**. Si regresan al inicio de la canción después de la línea 2, es una **repetición**.
+4. **Cambios de estructura.** Si la ventana no coincide pero 4 o más palabras coinciden con claridad en otra parte de la canción (evidencia ≥ 3.2), se **salta** allí. Cubre coros repetidos de más, estrofas saltadas u otro orden.
+5. **Predicción por tempo.** Se aprende cuántos segundos dura cada palabra para *este* cantante, con promedio móvil y solo con avances confirmados. Si hay voz y se reconocen palabras pero la letra no coincide durante más de `1.4 × duración esperada + 1 s`, se avanza una línea. El máximo es de **2 líneas seguidas sin confirmación**, para que la pantalla no se quede congelada ni se escape sola.
+6. **Anclas de Whisper.** Las frases largas, de más de 6 palabras, llegan con unos segundos de retraso. Se alinean en una ventana más amplia y el retraso se compensa con el tempo estimado: `palabras = retraso / segundos_por_palabra`.
+7. **Variaciones entre canciones.**
+   - **Tono:** voces graves, agudas o en falsete. Lo cubren los modelos de voz, que se entrenaron con muchas voces, y el control de ganancia.
+   - **Tempo:** se aprende de cada cantante.
+   - **Improvisaciones** ("oh yeah"): se ignoran porque no alinean con la letra.
+   - **Partes instrumentales:** no se predice si no se reconocen palabras, porque con música mezclada el detector de energía solo no basta.
+
+### 5.5 Canciones nuevas (aprendizaje)
+
+Si se acumulan 14 palabras (`palabras_cancion_nueva`) sin que ninguna canción alcance la evidencia mínima:
+
+1. Se crea un registro en `TEMP_NOMBRES` y cada frase que entrega el canal libre se guarda como una línea en `TEMP_LETRAS`. Las frases de Vosk terminan en las pausas naturales del canto, que suelen coincidir con las líneas, y se dividen si pasan de 80 caracteres.
+2. Termina con 8 s de silencio o con la tecla **t**.
+3. **Nombre sugerido:** la línea que más se repite, que normalmente es el coro y suele contener el título. Si ninguna se repite, las primeras palabras de la primera línea.
+4. Lo que tiene **menos de 3 líneas se descarta**: un comentario o el murmullo del final de una pista no es una canción.
+5. Si mientras aprende lo que se canta resulta pertenecer a una canción existente, se cancela el aprendizaje y se sigue esa canción.
+6. En *f → v* el usuario corrige la letra, confirma o cambia el nombre y la pasa a las tablas permanentes.
+
+---
+
+## 6. Limpieza del sonido
+
+`LimpiadorAudio` (`karaoke/audio/limpieza.py`) procesa el audio en tiempo real, en tramas de 512 muestras (32 ms) con 50 % de traslape y ventana raíz de Hann, que reconstruye la señal perfectamente (error < 10⁻⁷). Solo usa NumPy, para que funcione igual en Windows y en Android.
+
+1. **Filtro pasa banda de 100 a 4000 Hz** en el dominio de la frecuencia, con bordes de coseno de 60 Hz. Quita el zumbido de la red eléctrica (50/60 Hz), el bajo, el bombo y los agudos que no aportan a la inteligibilidad.
+2. **Sustracción espectral.** Durante los primeros 1.5 s se mide el espectro del ruido. Después se resta, con factor `factor_sustraccion` (1.0), un piso espectral de 0.25 y un suavizado temporal de la ganancia para evitar el "ruido musical". El perfil del ruido se sigue actualizando en las tramas sin voz.
+3. **Detector de voz (VAD).** Hay voz si la energía en la banda supera 4 veces (+6 dB) la del ruido, con una cola de 0.3 s para no cortar entre sílabas. Se combina con "¿el motor reconoce palabras?".
+4. **Control automático de ganancia** hacia −20 dBFS: baja rápido para no saturar y sube despacio para no "bombear", con un máximo de +20 dB. Le sigue un **limitador suave** `tanh`, que nunca pasa de 1.0.
+5. **Aislamiento de voz estéreo** (archivos ya mezclados). La voz principal suele estar al **centro** de la mezcla. Se calcula M = (L+R)/2 y S = (L−R)/2, y el espectro de S, que es lo que no está al centro, se resta del de M.
+
+**Resultado medido:** con una voz sintética mezclada con ruido y zumbido de 50 Hz, la relación señal/ruido pasó de **4.7 dB a 15.7 dB**. El aislamiento estéreo mejoró una mezcla de prueba de 6.5 a 9.8 dB.
+
+**Lección importante.** Con una canción ya mezclada, el "ruido" que se mide al inicio **es la música**, y restarlo también borra parte de la voz: Vosk reconoció menos palabras con la sustracción que sin ella. Por eso, **con archivos se usa el aislamiento estéreo sin sustracción**. Con el micrófono, donde el ruido sí es ruido del lugar, se usa la limpieza completa.
+
+---
+
+## 7. Evaluación con canciones reales
+
+Se probó con dos canciones **del propio autor** (generadas con Suno, sin problemas de derechos de autor), que se incluyen en `ejemplos/`:
+
+- *Sound of You*: 3:07, inglés.
+- *Ghost of you (Remastered)*: 2:09, inglés con versos en español.
+
+Las mediciones se hicieron en GitHub Actions (`.github/workflows/prueba-voz.yml`) con `herramientas/transcribir.py`. "Palabras de la letra" cuenta las palabras reconocidas que existen en la letra; "identificadas" son las frases que, solas, identificaron la canción y la línea correctas.
+
+**Sound of You**
+
+| Variante | Palabras de la letra | Frases identificadas | Velocidad |
+|---|---|---|---|
+| Vosk libre, sin limpieza | 22 | 2 | 21× tiempo real |
+| Vosk libre, con sustracción espectral | 17 | 0 | 18× |
+| Vosk restringido + aislamiento | 20 (todas de la letra) | 1 | 34× |
+| Whisper base con su filtro VAD interno | 32 | 2 | 40× |
+| **Whisper base sin VAD + aislamiento** | **185** | **17** | 8.6× |
+
+**Ghost of you** (bilingüe)
+
+| Variante | Palabras de la letra | Frases identificadas | Velocidad |
+|---|---|---|---|
+| Whisper base, inglés | 190 | 20 de 29 | 8.7× |
+| Whisper base, idioma automático | 199 (incluye el español) | 16 de 32 | 3.6× |
+
+**Hallazgos que cambiaron el diseño:**
+1. El filtro de voz interno de Whisper **descartaba la voz cantada** sobre música; se desactivó.
+2. Whisper "inventa" texto en la música o el silencio ("Music", "2.5%"); se filtra con `es_alucinacion()`.
+3. Mientras espera, Whisper detecta el idioma; al seguir una canción usa el idioma de esa canción, que es más rápido y preciso.
+
+**Prueba de punta a punta del modo automático** (`--simular`, Vosk + Whisper):
+
+| Canción | Identificada | Seguimiento |
+|---|---|---|
+| Sound of You | a los 21 s, línea 1 | las 24 líneas, completa a los 2:26 |
+| Ghost of you | a los 16 s, línea 2 | las 19 líneas, incluidas las de español; completa a los 1:53 |
+
+---
+
+## 8. Configuración (`karaoke.ini`)
+
+Se crea la primera vez junto al programa. Si falta una clave, se usa su valor por omisión (definidos en `VALORES_POR_OMISION`, en `karaoke/config.py`). Un valor inválido también se reemplaza por el de omisión.
+
+| Sección | Clave | Omisión | Descripción |
+|---|---|---|---|
+| `base_datos` | `archivo` | `CANCIONES.db` | Archivo SQLite |
+| `letras` | `caracteres_por_linea` | **80** | Longitud promedio/máxima de una línea |
+| `letras` | `accion_linea_larga` | `dividir` | `dividir`, `truncar` o `conservar` |
+| `letras` | `lineas_promedio_cancion` | **10** | Promedio de líneas (aviso si una canción es muy corta) |
+| `letras` | `lineas_maximas_cancion` | 500 | Máximo de líneas aceptado al importar |
+| `letras` | `elementos_por_pagina` | 10 | Paginación de las opciones *w* y *x* |
+| `programa` | `archivo` | `PROGRAMA.txt` | Archivo del programa (también se acepta `PROGRAMA`) |
+| `busqueda` | `puntaje_minimo` | 0.55 | Puntaje mínimo para identificar |
+| `busqueda` | `semejanza_palabra` | 0.78 | Tolerancia a errores por palabra |
+| `busqueda` | `evidencia_minima` | 2.5 | Evidencia mínima para identificar |
+| `audio` | `motor` | `hibrido` | `hibrido`, `vosk`, `whisper` o `simulado` |
+| `audio` | `modelo_vosk_es`, `modelo_vosk_en` | `modelo/...` | Carpetas de los modelos de Vosk |
+| `audio` | `modelo_whisper`, `carpeta_whisper` | `base`, `modelo/whisper-base` | Modelo de Whisper |
+| `audio` | `dispositivo` | (vacío) | Micrófono; se elige en *d → e* |
+| `audio` | `filtro_pasa_altos_hz`, `filtro_pasa_bajos_hz` | 100, 4000 | Banda de la voz |
+| `audio` | `reduccion_ruido`, `factor_sustraccion`, `segundos_calibracion` | sí, 1.0, 1.5 | Sustracción espectral |
+| `audio` | `control_ganancia`, `nivel_objetivo_db` | sí, −20 | AGC |
+| `audio` | `aislar_voz_archivo` | sí | Aislamiento estéreo para archivos |
+| `automatico` | `palabras_muestra` | 4 | Palabras mínimas para intentar identificar |
+| `automatico` | `palabras_cancion_nueva` | 14 | Palabras sin identificar para aprender una canción nueva |
+| `automatico` | `avance_linea` | 0.70 | Fracción de la línea para mostrar la siguiente |
+| `automatico` | `segundos_silencio_pausa` | 6 | Pausa automática |
+| `automatico` | `segundos_silencio_fin_aprendizaje` | 8 | Fin del aprendizaje |
+| `automatico` | `segundos_silencio_fin_sesion` | 0 | Fin automático de la sesión (0 = nunca) |
+| `automatico` | `prediccion_tempo`, `vocabulario_restringido` | sí, sí | Predicción por tempo y canal restringido |
+| `pantalla` | `lineas_previas`, `lineas_siguientes`, `colores` | 1, 2, sí | Pantalla del karaoke |
+
+**Dónde cambiar los 80 caracteres y las 10 líneas:** en `karaoke.ini` (`[letras] caracteres_por_linea` y `lineas_promedio_cancion`), sin recompilar. Los valores por omisión están en `karaoke/config.py`. La base de datos no impone límites, porque `TEXT` en SQLite no tiene longitud máxima. La pantalla envuelve cualquier línea al ancho de la ventana.
+
+---
+
+## 9. Pruebas automatizadas e integración continua
+
+```bash
+python -m pytest        # 135 pruebas, unos 5 segundos
+```
+
+| Archivo | Qué prueba |
+|---|---|
+| `test_texto.py` | Normalización, tildes, ñ, apóstrofos, división de líneas, etiquetas, idioma, archivos UTF-8/ANSI/BOM/CRLF |
+| `test_config.py` | Creación y lectura de `karaoke.ini`, valores inválidos, `KARAOKE_HOME` |
+| `test_db.py` | Creación y detección de la base, códigos automáticos que no se reutilizan, duplicados, cascada al borrar, temporales, programa, historial, sesiones abiertas |
+| `test_importador.py` | Los dos formatos, etiquetas, CRLF, duplicadas, líneas largas, archivos ANSI |
+| `test_buscador.py` | Identificación con errores de dedo, rechazo con poca evidencia, desempate por programa, índice que se actualiza |
+| `test_programa_sesion.py` | PROGRAMA flexible, acciones c/i/r/g/s/a, sesión completa |
+| `test_seguimiento.py` | Avance, tolerancia, línea igual, repetición, fin, tempo, anclas de Whisper |
+| `test_automatico.py` | Sesiones simuladas: identificar, empezar a mitad, pausa y reanudación, programa, aprender una canción nueva, descartar aprendizajes cortos, teclas |
+| `test_audio.py` | PCM, remuestreo, reconstrucción perfecta, mejora de SNR, detector de voz, AGC sin saturar, aislamiento estéreo, WAV/MP3, motor simulado, alucinaciones |
+| `test_interfaz.py` | **Integración:** ejecutan `main.py` con entradas escritas (alimentación, consultas, corrección, borrado con confirmación, programa y modo manual) y revisan la base de datos |
+
+Las pruebas encontraron y corrigieron errores reales antes de la entrega:
+- el bono del programa no desempataba;
+- el limitador podía saturar;
+- los saltos de línea de Windows no se normalizaban, lo que solo falló en Windows.
+
+**GitHub Actions:**
+- `pruebas.yml`: todas las pruebas en **Windows y Linux**, con Python 3.11 y 3.12, en cada cambio.
+- `prueba-voz.yml`: mide la transcripción con Vosk y Whisper y ejecuta el modo automático de punta a punta con las canciones reales.
+- `windows-exe.yml`: construye y **prueba** el ejecutable de Windows (sección 10).
+
+---
+
+## 10. Construcción del ejecutable de Windows
+
+`.github/workflows/windows-exe.yml` corre en `windows-latest`:
+
+1. Instala las dependencias y ejecuta las pruebas.
+2. Construye con **PyInstaller** en modo carpeta (`--onedir`). Arranca más rápido y es más confiable que `--onefile` con bibliotecas nativas grandes. Usa `--collect-all vosk faster_whisper ctranslate2` y los binarios de PortAudio de `sounddevice`.
+3. Descarga los modelos de Vosk (español e inglés) y Whisper base dentro de `modelo/`, para que el programa funcione **sin internet**.
+4. Copia `ejemplos/`, `docs/` y `canciones.txt`.
+5. **Prueba el `.exe`:**
+   - con un guion de teclas: crea la base, importa las canciones, las lista y sale;
+   - con `--simular` sobre *Ghost of you*: debe identificar la canción dentro del ejecutable.
+6. Comprime todo como `KaraokeInteligente-Windows.zip` y lo publica como artefacto. Con una etiqueta `v*`, también lo publica en *Releases*.
+
+Para construirlo a mano en Windows:
+
+```powershell
+pip install -r requirements.txt faster-whisper pyinstaller
+pyinstaller --noconfirm --onedir --console --name KaraokeInteligente `
+  --collect-all vosk --collect-all faster_whisper --collect-all ctranslate2 `
+  --collect-binaries sounddevice --collect-data _sounddevice_data --collect-submodules karaoke main.py
+# Copie la carpeta modelo\ y ejemplos\ dentro de dist\KaraokeInteligente\
+```
+
+El ejecutable busca `karaoke.ini`, `CANCIONES.db`, `PROGRAMA.txt` y `modelo/` **en su propia carpeta**. La variable de entorno `KARAOKE_HOME` o la opción `--carpeta` permiten usar otra.
+
+---
+
+## 11. Versión para Android
+
+*(Se documenta con la versión para Android.)*
+
+---
+
+## 12. Suposiciones y decisiones de diseño
+
+| # | Situación en la especificación | Decisión |
+|---|---|---|
+| 1 | La letra **i** se pide para "igual" y para "ignorar" | **i = igual**, **g = ignorar**, **s = seguir** |
+| 2 | Campos `código`, `nombre_canción`, `línea` | Se escribieron sin tildes (`codigo`, `nombre_cancion`, `linea`) por compatibilidad |
+| 3 | La base de datos se llama "CANCIONES" | El archivo es `CANCIONES.db` (configurable) |
+| 4 | El archivo se llama "PROGRAMA" | Se usa `PROGRAMA.txt` y también se acepta `PROGRAMA` sin extensión |
+| 5 | Formato del archivo de canciones: nombre y luego la letra | Las canciones se separan con una línea en blanco; si la letra tiene estrofas, se marcan los nombres con `#` o `NOMBRE:`. Se ignoran etiquetas como `[Coro]` y comentarios `//` |
+| 6 | 10 líneas y 80 caracteres en promedio | Son valores de `karaoke.ini`. Las líneas más largas se **dividen** por omisión, y se puede elegir truncar o conservar |
+| 7 | "Tablas temporales" para canciones aprendidas | Tablas permanentes `TEMP_NOMBRES`/`TEMP_LETRAS`, porque deben sobrevivir hasta que se revisen |
+| 8 | "Averiguar el nombre" de una canción aprendida | Se sugiere la línea más repetida (el coro) y el usuario la confirma |
+| 9 | Código generado automáticamente | `INTEGER PRIMARY KEY AUTOINCREMENT`; un código borrado nunca se reutiliza |
+| 10 | Nombres duplicados | No se permiten dos canciones con el mismo nombre normalizado (sin tildes ni mayúsculas) |
+| 11 | ¿Desde qué línea se muestra al buscar con palabras? | Desde la línea **donde terminan** las palabras escuchadas, que es la que se está cantando |
+| 12 | ¿Cuándo pasar a la siguiente línea en automático? | Al 70 % de la línea actual, un poco antes para que el público no se atrase |
+| 13 | Canciones en varios idiomas | Se detecta el idioma de cada letra (`es`/`en`). Whisper detecta el idioma solo mientras identifica |
+| 14 | El orden del PROGRAMA no es estricto | Siempre se sugiere la primera pendiente; cantar otra la marca como cantada; una canción abandonada (**b**/**x**) sigue pendiente |
+| 15 | ¿Cuándo termina la sesión? | Con **f**. En automático, opcionalmente, tras un silencio configurable |
+| 16 | Opciones agregadas | **a** atrás, **b** buscar otra, **n** siguiente del programa, **x** abandonar, **t** terminar de aprender; menú **h** historial, **d** diagnóstico de audio, **k** configuración |
+| 17 | Interfaz | Consola, que funciona igual en Windows y Android/Termux. Letra resaltada en amarillo y grande, colores ANSI y teclas sin Enter |
+
+---
+
+## 13. Limitaciones conocidas y mejoras futuras
+
+- **Voz y música mezcladas en un mismo canal** (micrófono junto a la bocina): es el caso más difícil. Mejoras previstas:
+  - **cancelación de la pista conocida**: cuando el programa reproduce la música, restarla del micrófono, como la cancelación de eco de las videollamadas;
+  - **separación de fuentes con IA** (Demucs / MDX-Net) para archivos.
+- **Vosk solo tiene modelos pequeños en algunos idiomas.** Las líneas en español de una canción en inglés no las reconoce el canal restringido de Vosk en inglés; las cubren Whisper y la predicción por tempo.
+- **Whisper en una CPU lenta** puede tardar más que la ventana de 6 s. El programa descarta ventanas para no retrasarse, y Vosk sigue funcionando.
+- **Interfaz gráfica:** la versión actual es de consola. Está prevista una interfaz gráfica y una versión web.
