@@ -535,8 +535,10 @@ class Escenario(Pantalla):
         idiomas = sorted({c.idioma for c in self.app.bd.todas_las_letras().values()})
         self.voz = crear_fuente(demostracion, guion, config=self.app.config_karaoke, idiomas=idiomas)
         self.fuente = "Micrófono" if not isinstance(self.voz, VozDemostracion) else "Demostración"
-        if "sin micrófono" in self.voz.nombre:
-            self.mensaje = self.voz.nombre
+        # Si no se pudo usar el micrófono, el motivo queda a la vista.
+        self._motivo_demo = self.voz.nombre if "sin micrófono" in self.voz.nombre else ""
+        if self._motivo_demo:
+            self.fuente = "Demostración · sin micrófono"
         self._segundo = 0.0
         if isinstance(self.voz, VozAndroid):
             VozAndroid.pedir_permiso(self._permiso)
@@ -826,7 +828,7 @@ class Escenario(Pantalla):
         }
         self._estado(*textos.get(pantalla.estado, ("FIN", T.TEXTO_2, T.SUPERFICIE_ALTA)))
         self.pausado = pantalla.estado in (PAUSA, IGNORANDO)
-        self.mensaje = pantalla.avisos[-1] if pantalla.avisos else ""
+        self.mensaje = pantalla.avisos[-1] if pantalla.avisos else getattr(self, "_motivo_demo", "")
         if pantalla.cancion is not None:
             self.titulo_cancion = pantalla.cancion.nombre
             total = len(pantalla.cancion.lineas)

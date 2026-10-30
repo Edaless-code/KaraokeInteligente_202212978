@@ -62,8 +62,11 @@ def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) ->
     if eleccion in ("hibrido", "híbrido", "vosk"):
         disponibles = [i for i in idiomas if i in idiomas_disponibles(config)] or idiomas_disponibles(config)
         if disponibles:
-            motores.append(MotorVosk({i: ruta_modelo(config, i) for i in disponibles},
-                                     config.entero("audio", "frecuencia_muestreo")))
+            try:
+                motores.append(MotorVosk({i: ruta_modelo(config, i) for i in disponibles},
+                                         config.entero("audio", "frecuencia_muestreo")))
+            except ErrorMotor as ex:  # p. ej. falta "pip install vosk": se sigue con Whisper
+                avisos.append(str(ex))
         else:
             avisos.append("No hay modelos de Vosk; use el diagnóstico (d) para descargarlos.")
     if eleccion in ("hibrido", "híbrido", "whisper"):
