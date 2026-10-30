@@ -1,0 +1,42 @@
+name: Prueba de reconocimiento de voz
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "karaoke/**"
+      - "herramientas/**"
+      - "ejemplos/**"
+      - ".github/workflows/prueba-voz.yml"
+
+jobs:
+  transcribir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Modelos de voz en caché
+        uses: actions/cache@v4
+        with:
+          path: modelo
+          key: vosk-small-es-0.42-en-us-0.15
+      - name: Descargar modelos de Vosk
+        run: |
+          mkdir -p modelo
+          for m in vosk-model-small-es-0.42 vosk-model-small-en-us-0.15; do
+            if [ ! -d "modelo/$m" ]; then
+              curl -sSL -o "$m.zip" "https://alphacephei.com/vosk/models/$m.zip"
+              unzip -q "$m.zip" -d modelo && rm "$m.zip"
+            fi
+          done
+          ls modelo
+      - name: Transcribir con limpieza (canal libre)
+        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en
+      - name: Transcribir sin limpieza (canal libre)
+        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en --sin-limpieza
+      - name: Transcribir con limpieza (canal restringido a las letras)
+        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en --restringido
