@@ -22,6 +22,7 @@ import numpy as np
 from ..config import Config
 from ..texto import ajustar_linea, censurar, detectar_idioma
 from .fuentes import ErrorAudio, leer_archivo_audio
+from ..nombres_audio import nombre_desde_archivo, nombre_seguro  # noqa: F401 (se usan desde fuera)
 from .limpieza import aislar_voz_estereo
 from .motores import ErrorMotor, es_alucinacion
 
@@ -66,25 +67,6 @@ def buscar_audios(ruta: Path) -> list[Path]:
     if ruta.is_dir():
         return sorted(p for p in ruta.iterdir() if p.is_file() and p.suffix.lower() in FORMATOS)
     return [ruta] if ruta.is_file() and ruta.suffix.lower() in FORMATOS else []
-
-
-_RUIDO_NOMBRE = re.compile(
-    r"[\(\[]?\b(official|audio|video|lyrics?|letra|hq|hd|mp3|final|mix|master)\b[\)\]]?", re.IGNORECASE)
-
-
-def nombre_desde_archivo(ruta: Path) -> str:
-    """"Ghost_of_you (Official Audio).mp3" -> "Ghost of you"."""
-    nombre = ruta.stem.replace("_", " ").replace(".", " ")
-    nombre = _RUIDO_NOMBRE.sub(" ", nombre)
-    nombre = re.sub(r"[\(\[]\s*[\)\]]", " ", nombre)
-    nombre = re.sub(r"\s*-\s*$", "", " ".join(nombre.split()))
-    return nombre.strip(" -") or ruta.stem
-
-
-def nombre_seguro(texto: str) -> str:
-    """Nombre válido para un archivo en Windows, Linux y Android."""
-    limpio = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", texto).strip(" .")
-    return limpio[:80] or "pista"
 
 
 _SIMBOLOS = re.compile(r"[^\w\s'’,.!?¿¡-]")

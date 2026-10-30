@@ -14,6 +14,14 @@ Controles (equivalen a las teclas de la versión de Windows):
 * cerrar (X) ....................... f, con resumen de la sesión
 
 En modo automático los mismos controles corrigen lo que decide la IA.
+
+Modo "pista" (Reproducir con letra): la canción suena y la letra cambia sola,
+cada línea un poco antes de cantarse. Controles: −5 s, voz del artista
+(100/75/50/25 %, en la computadora), +5 s, desde el inicio y pausa.
+
+Los controles flotan en una "isla" semitransparente (como Apple Music) que
+nunca pasa de cierto ancho; la letra crece con la pantalla (teléfono,
+tableta o computadora).
 """
 
 from __future__ import annotations
@@ -26,6 +34,9 @@ from kivy.properties import BooleanProperty, ColorProperty, NumericProperty, Str
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 
+import threading
+
+from karaoke.alineacion import linea_en, tiempos_de_lineas
 from karaoke.automatico import (APRENDIENDO, ESPERANDO, IGNORANDO, PAUSA, SIGUIENDO,
                                 ControladorAutomatico)
 from karaoke.sesion import SesionKaraoke
@@ -233,46 +244,59 @@ Builder.load_string("""
                 text: root.fuente
                 pos_hint: {"center_y": .5}
 
-        # ------------------------------------------------------- controles
-        BoxLayout:
-            orientation: "vertical"
+        # ------------------------------------------- controles: la "isla"
+        AnchorLayout:
             size_hint_y: None
-            height: self.minimum_height
-            padding: T.ESP["l"], T.ESP["m"], T.ESP["l"], T.ESP["l"]
-            spacing: T.ESP["m"]
-            canvas.before:
-                Color:
-                    rgba: T.SUPERFICIE
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [T.RADIO_TARJETA, T.RADIO_TARJETA, 0, 0]
+            height: isla.height + dp(12) + (dp(12) if root.width < dp(600) else dp(20))
+            anchor_y: "top"
+            padding: dp(12), dp(4), dp(12), (dp(12) if root.width < dp(600) else dp(20))
             BoxLayout:
-                size_hint_y: None
-                height: dp(64)
-                spacing: T.ESP["s"]
-                Control:
-                    icono: "skip-previous"
-                    texto: "Atrás"
-                    on_release: root.accion("a")
-                Control:
-                    icono: "repeat-once"
-                    texto: "Igual"
-                    on_release: root.accion("i")
-                Control:
-                    icono: "replay"
-                    texto: "Repetir"
-                    on_release: root.accion("r")
-                Control:
-                    icono: "play" if root.pausado else "pause"
-                    texto: "Seguir" if root.pausado else "Pausa"
-                    activo: root.pausado
-                    on_release: root.accion("s" if root.pausado else "g")
-            Boton:
-                texto: root.texto_principal
-                icono: root.icono_principal
-                estilo: "primario" if root.modo == "manual" else "automatico"
-                on_release: root.accion_principal()
+                id: isla
+                orientation: "vertical"
+                size_hint: None, None
+                width: min(root.width - dp(24), dp(720))
+                height: self.minimum_height
+                padding: T.ESP["l"], T.ESP["m"], T.ESP["l"], T.ESP["l"]
+                spacing: T.ESP["m"]
+                canvas.before:
+                    Color:
+                        rgba: T.color("#1A2540", 0.86)
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(26)]
+                    Color:
+                        rgba: T.color("#8FAEE0", 0.14)
+                    Line:
+                        rounded_rectangle: self.x, self.y, self.width, self.height, dp(26)
+                        width: 1
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(64)
+                    spacing: T.ESP["s"]
+                    Control:
+                        icono: root.icono1
+                        texto: root.texto1
+                        on_release: root.accion("a")
+                    Control:
+                        icono: root.icono2
+                        texto: root.texto2
+                        activo: root.activo2
+                        on_release: root.accion("i")
+                    Control:
+                        icono: root.icono3
+                        texto: root.texto3
+                        on_release: root.accion("r")
+                    Control:
+                        icono: root.icono4
+                        texto: root.texto4
+                        activo: root.pausado and root.modo != "pista"
+                        on_release: root.accion(root.tecla4)
+                Boton:
+                    texto: root.texto_principal
+                    icono: root.icono_principal
+                    estilo: "primario" if root.modo == "manual" else "automatico"
+                    on_release: root.accion_principal()
 
 <Control>:
     orientation: "vertical"
@@ -408,6 +432,17 @@ class Escenario(Pantalla):
     pulso = NumericProperty(1.0)
     texto_principal = StringProperty("Continuar")
     icono_principal = StringProperty("chevron-right")
+    # Los cuatro controles de la isla cambian según el modo.
+    icono1 = StringProperty("skip-previous")
+    texto1 = StringProperty("Atrás")
+    icono2 = StringProperty("repeat-once")
+    texto2 = StringProperty("Igual")
+    activo2 = BooleanProperty(False)
+    icono3 = StringProperty("replay")
+    texto3 = StringProperty("Repetir")
+    icono4 = StringProperty("pause")
+    texto4 = StringProperty("Pausa")
+    tecla4 = StringProperty("g")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -418,14 +453,20 @@ class Escenario(Pantalla):
         self._segundo = 0.0
         self._linea_mostrada = None
         self._toque_inicio = None
+        self.reproduccion = None
+        self._tiempos: list[float] = []
+        self._cancion_pista = None
 
     # ------------------------------------------------------------ entrada
     def al_entrar(self, modo: str = "manual", codigo: int | None = None, linea: int = 0, **_):
-        if self.sesion is None or self.sesion.finalizada or self.modo != modo:
+        if self.sesion is None or self.sesion.finalizada or self.modo != modo or modo == "pista":
             self._cerrar_automatico()
+            self._cerrar_pista()
             self.modo = modo
             self.sesion = SesionKaraoke(self.app.bd, modo)
-        if modo == "automatico":
+        if modo == "pista" and codigo is not None:
+            self._iniciar_pista(codigo)
+        elif modo == "automatico":
             self._iniciar_automatico()
         elif codigo is not None:
             cancion = self.app.bd.obtener_cancion(codigo)
@@ -436,12 +477,18 @@ class Escenario(Pantalla):
 
     # ------------------------------------------------------------- manual
     def accion_principal(self):
+        if self.modo == "pista":
+            self.accion("g")
+            return
         if self.modo == "manual" and self.sesion and self.sesion.en_curso is None:
             self._despues_de_terminar()
             return
         self.accion("s" if self.pausado else "c")
 
     def accion(self, tecla: str):
+        if self.modo == "pista":
+            self._accion_pista(tecla)
+            return
         if self.modo == "automatico" and self.control is not None:
             self.control.comando(tecla)
             self.actualizar()
@@ -530,12 +577,163 @@ class Escenario(Pantalla):
         Animation.cancel_all(self, "pulso")
         self.control = None
 
+    # ------------------------------------------------- con pista (r)
+    def _iniciar_pista(self, codigo: int):
+        from ..reproduccion import Reproduccion
+
+        bd = self.app.bd
+        cancion = bd.obtener_cancion(codigo)
+        archivo = bd.obtener_pista(codigo)
+        ruta = self.app.carpeta / archivo if archivo else None
+        self._cancion_pista = cancion
+        self.titulo_cancion = cancion.nombre if cancion else "Sin canción"
+        if cancion is None or ruta is None or not ruta.exists():
+            self._mensaje_pista("Esta canción no tiene pista de audio.")
+            return
+        try:
+            self.reproduccion = Reproduccion(ruta)
+        except Exception as ex:
+            self._mensaje_pista(f"No se pudo reproducir: {ex}")
+            return
+        tiempos = bd.obtener_tiempos(codigo)
+        if tiempos:
+            self._arrancar_pista(tiempos)
+            return
+        if self.reproduccion.voz_disponible:
+            # Computadora: la IA sincroniza la letra una sola vez (~1 min).
+            self._mensaje_pista("Sincronizando la letra con la pista…", "Solo la primera vez · alrededor de un minuto")
+            threading.Thread(target=self._sincronizar, args=(codigo, cancion.lineas, ruta), daemon=True).start()
+        else:
+            # Teléfono: tiempos aproximados (se afinan al abrirla en la computadora).
+            self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
+            self.mensaje = "Letra con tiempos aproximados"
+
+    def _sincronizar(self, codigo, lineas, ruta):
+        try:
+            from karaoke.audio.desde_audio import sincronizar
+
+            tiempos = sincronizar(ruta, self.app.config_karaoke, lineas)
+        except Exception as ex:
+            error = f"No se pudo sincronizar: {ex}"
+            Clock.schedule_once(lambda *_: self._mensaje_pista(error), 0)
+            return
+
+        def listo(*_):
+            if self.reproduccion is None:  # se salió mientras sincronizaba
+                return
+            self.app.bd.guardar_tiempos(codigo, tiempos)
+            self._arrancar_pista(tiempos)
+
+        Clock.schedule_once(listo, 0)
+
+    def _arrancar_pista(self, tiempos: list[float]):
+        self._tiempos = tiempos
+        try:
+            self.reproduccion.iniciar()
+        except Exception as ex:
+            self._mensaje_pista(f"No se pudo reproducir: {ex}")
+            return
+        self.sesion.iniciar(self._cancion_pista, 0)
+        self._reloj = Clock.schedule_interval(lambda dt: self.actualizar(), 1 / 30)
+
+    def _mensaje_pista(self, texto: str, detalle: str = ""):
+        self.linea_previa = self.linea_siguiente = self.linea_despues = ""
+        self.linea_actual = texto
+        self.mensaje = detalle
+        self.tamano_actual = dp(22)
+        self._controles_pista()
+
+    def _accion_pista(self, tecla: str):
+        r = self.reproduccion
+        if r is None or not self._tiempos:
+            return
+        if tecla == "a":
+            r.mover(-5)
+        elif tecla in ("r", "c"):
+            r.mover(5)
+        elif tecla == "i":
+            r.siguiente_nivel_voz()
+        elif tecla == "inicio":
+            r.mover(-r.segundo)
+        elif tecla in ("g", "s"):
+            r.alternar_pausa()
+        self.actualizar()
+
+    def _cerrar_pista(self):
+        if self.reproduccion is not None:
+            self.reproduccion.detener()
+            self.reproduccion = None
+            if self._reloj is not None:
+                self._reloj.cancel()
+                self._reloj = None
+        self._tiempos = []
+
+    def _controles_pista(self):
+        r = self.reproduccion
+        voz = int(round((r.voz if r else 1.0) * 100))
+        self.icono1, self.texto1 = "rewind-5", "−5 s"
+        self.icono2 = "account-voice"
+        self.texto2 = f"Voz {voz} %" if r is not None and r.voz_disponible else "Voz"
+        self.activo2 = voz < 100
+        self.icono3, self.texto3 = "fast-forward-5", "+5 s"
+        self.icono4, self.texto4, self.tecla4 = "restart", "Inicio", "inicio"
+        pausado = bool(r and r.pausado)
+        self.texto_principal, self.icono_principal = ("Reproducir", "play") if pausado else ("Pausa", "pause")
+
+    def _pintar_pista(self):
+        r = self.reproduccion
+        self._controles_pista()
+        if r is None or not self._tiempos or self._cancion_pista is None:
+            return
+        cancion = self._cancion_pista
+        segundo = r.segundo
+        adelanto = self.app.config_karaoke.decimal("automatico", "segundos_letra_adelantada")
+        actual = linea_en(self._tiempos, segundo, adelanto)
+        reloj = f"{int(segundo // 60)}:{int(segundo % 60):02d} / {int(r.duracion // 60)}:{int(r.duracion % 60):02d}"
+        self.subtitulo = reloj
+        self.progreso = min(1.0, segundo / max(1.0, r.duracion))
+        self.pausado = r.pausado
+        if r.terminada:
+            self._estado("TERMINÓ", T.EXITO, T.EXITO_SUAVE)
+            if self.sesion and self.sesion.en_curso is not None:
+                self.sesion.terminar(completada=True)
+                self.app.datos_cambiaron()
+            self._pintar_lineas(cancion.lineas, len(cancion.lineas))
+            return
+        if r.pausado:
+            self._estado("EN PAUSA", T.AVISO, T.AVISO_SUAVE)
+        elif actual < 0:
+            self._estado("INTRO", T.SECUNDARIO_TEXTO, T.SECUNDARIO_SUAVE)
+        else:
+            self._estado("SONANDO", T.EXITO, T.EXITO_SUAVE)
+        if actual < 0:
+            faltan = max(0, int(self._tiempos[0] - adelanto - segundo + 0.99))
+            self.mensaje = f"La letra empieza en {faltan} s"
+            self._pintar_lineas(cancion.lineas, 0)
+            self.linea_previa = ""
+            return
+        if self.mensaje.startswith("La letra empieza"):
+            self.mensaje = ""
+        self._pintar_lineas(cancion.lineas, actual)
+
+    def _controles_normales(self):
+        self.icono1, self.texto1 = "skip-previous", "Atrás"
+        self.icono2, self.texto2, self.activo2 = "repeat-once", "Igual", False
+        self.icono3, self.texto3 = "replay", "Repetir"
+        self.icono4 = "play" if self.pausado else "pause"
+        self.texto4 = "Seguir" if self.pausado else "Pausa"
+        self.tecla4 = "s" if self.pausado else "g"
+
     # ----------------------------------------------------------- pantalla
     def actualizar(self):
+        if self.modo == "pista":
+            self._pintar_pista()
+            return
         if self.modo == "automatico" and self.control is not None:
             self._pintar_automatico()
         else:
             self._pintar_manual()
+        self._controles_normales()
 
     def _pintar_lineas(self, lineas: list[str], actual: int):
         def linea(i):
@@ -546,7 +744,10 @@ class Escenario(Pantalla):
         self.linea_siguiente = linea(actual + 1) if actual < len(lineas) else ""
         self.linea_despues = linea(actual + 2) if actual < len(lineas) else ""
         largo = len(self.linea_actual)
-        self.tamano_actual = dp(30) if largo <= 40 else dp(26) if largo <= 70 else dp(22)
+        # La letra crece con la pantalla: teléfono, tableta o computadora.
+        escala = min(1.6, max(1.0, self.width / dp(430)))
+        base = dp(30) if largo <= 40 else dp(26) if largo <= 70 else dp(22)
+        self.tamano_actual = base * escala
         self.progreso = min(1.0, actual / max(1, len(lineas)))
         clave = (tuple(lineas[:1]), actual)
         if clave != self._linea_mostrada:
@@ -644,6 +845,13 @@ class Escenario(Pantalla):
 
     # ---------------------------------------------------------- terminar
     def terminar_sesion(self):
+        if self.modo == "pista":
+            self._cerrar_pista()
+            if self.sesion is not None and not self.sesion.finalizada:
+                self.sesion.finalizar()
+            self.app.datos_cambiaron()
+            self._salir()
+            return
         sesion = self.sesion
         if sesion is None or (not sesion.cantadas and sesion.en_curso is None and self.control is None):
             self._salir()
@@ -668,6 +876,14 @@ class Escenario(Pantalla):
         self.sesion = None
         self.app.atras()
 
+    def on_size(self, *_):
+        # Al cambiar el tamaño de la ventana la letra se vuelve a medir.
+        if self.sesion is not None or self.control is not None:
+            self._linea_mostrada = None
+            self.actualizar()
+
     def on_leave(self, *_):
+        if self.modo == "pista":
+            self._cerrar_pista()
         if self.sesion is not None and self.sesion.finalizada:
             self.sesion = None

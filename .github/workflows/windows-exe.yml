@@ -4,7 +4,7 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
-    paths-ignore: ["movil/**", "docs/**", "*.md", "VERSION"]
+    paths-ignore: ["docs/**", "*.md", "VERSION", "movil/buildozer.spec"]
   workflow_dispatch:
   workflow_call:   # lo usa el flujo "Publicar versión"
 
@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalar dependencias
-        run: pip install -r requirements.txt faster-whisper pyinstaller pytest
+        run: pip install -r requirements.txt faster-whisper pyinstaller pytest kivy==2.3.1 pillow
 
       - name: Pruebas
         run: python -m pytest -q
@@ -48,6 +48,12 @@ jobs:
           --collect-data _sounddevice_data
           --collect-submodules karaoke
           main.py
+
+      - name: Construir la versión de escritorio (interfaz gráfica)
+        run: |
+          pyinstaller --noconfirm --clean --distpath dist-escritorio escritorio.spec
+          Copy-Item "dist-escritorio/KaraokeEscritorio/KaraokeEscritorio.exe" "$env:DESTINO/"
+          Copy-Item -Recurse "dist-escritorio/KaraokeEscritorio/_escritorio" "$env:DESTINO/_escritorio"
 
       - name: Modelos de voz en caché
         uses: actions/cache@v4
@@ -101,6 +107,17 @@ jobs:
           if ($salida -notmatch "Canción identificada: Ghost of you") { throw "El modo automático no identificó la canción" }
           if (Test-Path "$env:DESTINO/karaoke.ini") { Remove-Item "$env:DESTINO/karaoke.ini" }
 
+      - name: "Prueba 3: la versión de escritorio abre su ventana"
+        continue-on-error: true   # el servidor de GitHub puede no tener OpenGL
+        run: |
+          $env:KARAOKE_PRUEBA_SEGUNDOS = "8"
+          $env:KIVY_GL_BACKEND = "angle_sdl2"
+          $p = Start-Process "$env:DESTINO/KaraokeEscritorio.exe" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "La ventana no se cerró sola" }
+          if (-not (Test-Path "$env:DESTINO/prueba_escritorio.txt")) { throw "La interfaz no llegó a mostrarse" }
+          Get-Content "$env:DESTINO/prueba_escritorio.txt"
+          Remove-Item "$env:DESTINO/prueba_escritorio.txt", "$env:DESTINO/CANCIONES.db*", "$env:DESTINO/karaoke.ini" -ErrorAction SilentlyContinue
+
       - name: Comprimir
         run: |
           $ProgressPreference = "SilentlyContinue"
@@ -126,7 +143,7 @@ jobs:
 
             | Archivo | Plataforma | Cómo usarlo |
             |---|---|---|
-            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir y abrir `KaraokeInteligente.exe`. Incluye los modelos de voz (funciona sin internet). |
+            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir. `KaraokeInteligente.exe` es la versión de consola y `KaraokeEscritorio.exe` la de interfaz gráfica; comparten canciones. Incluye los modelos de voz (funciona sin internet). |
             | `KaraokeInteligente-Android.apk` | Android 7.0 o superior | Abrir el archivo en el teléfono y permitir la instalación. |
 
             Instrucciones completas en el [README](https://github.com/${{ github.repository }}#readme) y en `docs/`.

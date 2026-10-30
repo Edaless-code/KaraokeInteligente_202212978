@@ -295,6 +295,85 @@ KV = """
             pos: self.x, self.top - 1
             size: self.width, 1
 
+<ItemLateral>:
+    size_hint_y: None
+    height: dp(44)
+    padding: dp(12), 0
+    spacing: dp(12)
+    canvas.before:
+        Color:
+            rgba: T.SUPERFICIE_ALTA if root.activa else ((1, 1, 1, .04) if root.state == "down" else (0, 0, 0, 0))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+    Icono:
+        nombre: root.icono
+        tamano: dp(22)
+        tono: T.ACENTO_TEXTO if root.activa else T.TEXTO_2
+        pos_hint: {"center_y": .5}
+    Label:
+        text: root.texto
+        font_name: T.FUENTE_SEMI if root.activa else T.FUENTE_MEDIA
+        font_size: sp(15)
+        color: T.TEXTO if root.activa else T.TEXTO_2
+        text_size: self.size
+        halign: "left"
+        valign: "middle"
+
+<BarraLateral>:
+    orientation: "vertical"
+    size_hint_x: None
+    width: dp(236)
+    padding: dp(14), dp(22), dp(14), dp(16)
+    spacing: dp(4)
+    canvas.before:
+        Color:
+            rgba: T.color("#0E1626", 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: T.TRAZO
+        Rectangle:
+            pos: self.right - 1, self.y
+            size: 1, self.height
+    BoxLayout:
+        size_hint_y: None
+        height: dp(44)
+        spacing: dp(10)
+        padding: dp(6), 0, 0, dp(14)
+        Icono:
+            nombre: "microphone"
+            tamano: dp(26)
+            tono: T.ACENTO_TEXTO
+            pos_hint: {"center_y": .5}
+        Label:
+            text: "Karaoke"
+            font_name: T.FUENTE_EXTRA
+            font_size: sp(22)
+            color: T.TEXTO
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+    BoxLayout:
+        id: elementos
+        orientation: "vertical"
+        size_hint_y: None
+        height: self.minimum_height
+        spacing: dp(4)
+    Widget:
+    Label:
+        text: "Edgar Alessandro Chocon Oliva · 202212978"
+        font_name: T.FUENTE_MEDIA
+        font_size: sp(11)
+        color: T.TEXTO_3
+        size_hint_y: None
+        height: dp(32)
+        text_size: self.size
+        halign: "left"
+        valign: "middle"
+
 <Dialogo>:
     background: ""
     background_color: 0, 0, 0, 0
@@ -343,7 +422,8 @@ KV = """
 <Aviso>:
     size_hint: None, None
     height: dp(46)
-    width: min(etiqueta.texture_size[0] + dp(56), self.parent.width - dp(32)) if self.parent else dp(300)
+    # ancho según el texto (aprox. 7.6 sp por letra), sin pasar de 520 dp
+    width: min(len(root.texto) * sp(7.6) + dp(64), self.parent.width - dp(32), dp(520)) if self.parent else dp(300)
     opacity: 0
     canvas.before:
         Color:
@@ -507,6 +587,30 @@ class BarraPestanas(BoxLayout):
     def marcar(self, nombre: str) -> None:
         for pestana in self.children:
             pestana.activa = pestana.nombre == nombre
+
+
+class ItemLateral(ButtonBehavior, BoxLayout):
+    icono = StringProperty("")
+    texto = StringProperty("")
+    activa = BooleanProperty(False)
+    nombre = StringProperty("")
+
+
+class BarraLateral(BoxLayout):
+    """Navegación lateral para pantallas anchas (computadora, tableta)."""
+
+    al_elegir = ObjectProperty(None, allownone=True)
+
+    def construir(self, pestanas: list[tuple[str, str, str]]) -> None:
+        self.ids.elementos.clear_widgets()
+        for nombre, icono, texto in pestanas:
+            item = ItemLateral(nombre=nombre, icono=icono, texto=texto)
+            item.bind(on_press=lambda i: self.al_elegir and self.al_elegir(i.nombre))
+            self.ids.elementos.add_widget(item)
+
+    def marcar(self, nombre: str) -> None:
+        for item in self.ids.elementos.children:
+            item.activa = item.nombre == nombre
 
 
 class Dialogo(ModalView):

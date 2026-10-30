@@ -47,6 +47,8 @@ jobs:
         run: |
           rm -rf movil/karaoke
           cp -r karaoke movil/karaoke
+          # pistas de ejemplo (se reproducen con su letra en "Reproducir con letra")
+          cp ejemplos/*.mp3 movil/ejemplos/
           find movil -name "__pycache__" -prune -exec rm -rf {} +
 
       - name: Caché de Buildozer (SDK, NDK y compilaciones)

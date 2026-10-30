@@ -141,6 +141,12 @@ ICONO = {
     "text-box-plus-outline": "\U000F0EAB",
     "translate": "\U000F05CA",
     "waveform": "\U000F147D",
+    "rewind-5": "\U000F11F9",
+    "fast-forward-5": "\U000F11F8",
+    "account-voice": "\U000F05CB",
+    "playlist-play": "\U000F0411",
+    "home-outline": "\U000F06A1",
+    "music-note-outline": "\U000F0F74",
 }
 
 

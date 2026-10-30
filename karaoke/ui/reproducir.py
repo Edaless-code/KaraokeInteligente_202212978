@@ -40,21 +40,9 @@ class ReproducirConLetra:
         self.teclado = app.teclado
 
     def vincular_ejemplos(self) -> None:
-        """Los MP3 de la carpeta ejemplos/ se asocian a su canción (por el
-        nombre del archivo) para poder reproducirlos sin configurar nada."""
-        from ..audio.desde_audio import FORMATOS, nombre_desde_archivo
+        from ..pistas import vincular_ejemplos
 
-        carpeta = self.config.carpeta / "ejemplos"
-        if not carpeta.is_dir():
-            return
-        con_pista = {c for c, _, _ in self.bd.listar_pistas()}
-        for ruta in sorted(carpeta.iterdir()):
-            if ruta.suffix.lower() not in FORMATOS:
-                continue
-            encontradas = self.bd.buscar_por_nombre(nombre_desde_archivo(ruta), limite=1)
-            if encontradas and encontradas[0][0] not in con_pista:
-                self.bd.guardar_pista(encontradas[0][0], ruta.relative_to(self.config.carpeta).as_posix())
-                con_pista.add(encontradas[0][0])
+        vincular_ejemplos(self.bd, self.config)
 
     def ejecutar(self) -> None:
         try:

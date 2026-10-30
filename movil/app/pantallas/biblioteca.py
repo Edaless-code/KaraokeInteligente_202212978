@@ -127,8 +127,17 @@ Builder.load_string("""
                         text: root.chip_veces
                     Widget:
                 Boton:
-                    texto: "Cantar esta canción"
+                    texto: "Reproducir con letra"
+                    icono: "playlist-play"
+                    size_hint_y: None
+                    height: T.ALTO_BOTON if root.con_pista else 0
+                    opacity: 1 if root.con_pista else 0
+                    disabled: not root.con_pista
+                    on_release: app.abrir("escenario", modo="pista", codigo=root.codigo)
+                Boton:
+                    texto: "Cantar sin pista (avanzar a mano)" if root.con_pista else "Cantar esta canción"
                     icono: "play"
+                    estilo: "secundario" if root.con_pista else "primario"
                     on_release: app.abrir("escenario", modo="manual", codigo=root.codigo, linea=0)
                 BoxLayout:
                     id: letra
@@ -208,6 +217,7 @@ class DetalleCancion(Pantalla):
     chip_idioma = StringProperty("")
     chip_veces = StringProperty("")
     existe = BooleanProperty(True)
+    con_pista = BooleanProperty(False)
 
     def al_entrar(self, codigo: int = 0, **_):
         if codigo:
@@ -224,6 +234,8 @@ class DetalleCancion(Pantalla):
             self.chip_lineas = self.chip_idioma = self.chip_veces = ""
             return
         self.nombre = cancion.nombre
+        archivo = self.app.bd.obtener_pista(cancion.codigo)
+        self.con_pista = bool(archivo) and (self.app.carpeta / archivo).exists()
         self.antetitulo = f"CÓDIGO {cancion.codigo}"
         self.chip_lineas = f"{len(cancion.lineas)} líneas"
         self.chip_idioma = "Inglés" if cancion.idioma == "en" else "Español"
