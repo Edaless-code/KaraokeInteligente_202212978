@@ -83,6 +83,10 @@ class KaraokeApp(App):
             ancho, alto = (os.environ.get("KARAOKE_VENTANA") or "1180x760").split("x")
             Window.size = (int(dp(int(ancho))), int(dp(int(alto))))
             Window.minimum_width, Window.minimum_height = dp(360), dp(600)
+            if not os.environ.get("KARAOKE_VENTANA"):
+                # En pantallas con escala (125 %, 150 %) la ventana de arriba puede no
+                # caber: se abre maximizada y el diseño se adapta solo.
+                Window.maximize()
         self.preparar_datos()
 
         from .pantallas.biblioteca import Biblioteca, DetalleCancion
