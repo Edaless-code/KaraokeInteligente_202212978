@@ -79,6 +79,7 @@ jobs:
 
       - name: "Prueba 1: el menú arranca, importa canciones y sale"
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           $entrada = "f`nt`n`n`nr`nw`n`ns`n"
           $salida = $entrada | & "$env:DESTINO/KaraokeInteligente.exe" 2>&1 | Out-String
           Write-Output $salida
@@ -88,6 +89,7 @@ jobs:
 
       - name: "Prueba 2: modo automático dentro del .exe (Vosk + Whisper)"
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           $salida = & "$env:DESTINO/KaraokeInteligente.exe" --simular "$env:DESTINO/ejemplos/Ghost_of_you_Remastered.mp3" 2>&1 | Out-String
           Write-Output $salida
           if ($salida -notmatch "Canción identificada: Ghost of you") { throw "El modo automático no identificó la canción" }

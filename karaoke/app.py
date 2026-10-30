@@ -18,6 +18,8 @@ def main(argumentos: list[str] | None = None) -> int:
     parser.add_argument("--simular", nargs=argparse.REMAINDER, metavar="AUDIO",
                         help="ejecuta el modo automático sin pantalla sobre un archivo de audio")
     opciones = parser.parse_args(argumentos)
+    # UTF-8 en la consola de Windows desde el inicio (también al redirigir la salida).
+    consola.inicializar(colores=opciones.simular is None)
     if opciones.simular is not None:
         from .simulacion import main as simular
 
