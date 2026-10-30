@@ -110,7 +110,7 @@ def test_programa_y_modo_manual(carpeta):
 def test_modo_manual_busca_por_palabras_con_errores(carpeta):
     teclas = ["f", "t", "", "", "r", "m", "folow me everiwere", "", "f", "", "s"]
     salida = ejecutar(carpeta, teclas)
-    assert "Sound of You" in salida and "línea 3/24" in salida
+    assert "Sound of You" in salida and "3 de 24" in salida
 
 
 def test_opcion_invalida_no_rompe_el_programa(carpeta):

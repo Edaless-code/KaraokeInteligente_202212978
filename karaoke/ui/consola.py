@@ -16,18 +16,22 @@ import time
 
 ES_WINDOWS = os.name == "nt"
 
+# Paleta fría y mate (la misma idea que la aplicación móvil): azules acero,
+# grises y tonos apagados; sin rojos ni colores chillones. Son colores de 256
+# tonos, que la consola de Windows 10/11 y las terminales de Linux entienden.
 _COLORES = {
     "reset": "\033[0m",
     "negrita": "\033[1m",
-    "tenue": "\033[2m",
-    "rojo": "\033[31m",
-    "verde": "\033[32m",
-    "amarillo": "\033[33m",
-    "azul": "\033[34m",
-    "magenta": "\033[35m",
-    "cian": "\033[36m",
-    "blanco": "\033[37m",
-    "fondo_azul": "\033[44m",
+    "tenue": "\033[38;5;244m",       # gris para lo secundario
+    "texto": "\033[38;5;254m",       # casi blanco: la línea que se canta
+    "rojo": "\033[38;5;174m",        # errores: rosa apagado
+    "verde": "\033[38;5;108m",       # éxito: verde salvia
+    "amarillo": "\033[38;5;180m",    # avisos: arena
+    "azul": "\033[38;5;67m",         # azul acero
+    "magenta": "\033[38;5;146m",     # lavanda grisácea
+    "cian": "\033[38;5;110m",        # acento principal: azul claro mate
+    "blanco": "\033[38;5;252m",
+    "fondo_azul": "\033[48;5;24m",
 }
 
 usar_colores = True
@@ -66,6 +70,10 @@ def color(texto: str, *estilos: str) -> str:
 
 def ancho() -> int:
     return max(40, shutil.get_terminal_size((80, 24)).columns)
+
+
+def alto() -> int:
+    return max(16, shutil.get_terminal_size((80, 24)).lines)
 
 
 def limpiar() -> None:
@@ -113,11 +121,13 @@ def redibujar(renglones: list[str]) -> None:
     print("\n".join(renglones), flush=True)
 
 
-def titulo(texto: str) -> None:
-    linea = "═" * min(ancho(), 70)
-    print(color(linea, "cian"))
-    print(color(f"  {texto}", "negrita", "cian"))
-    print(color(linea, "cian"))
+def titulo(texto: str, derecha: str = "") -> None:
+    """Encabezado de cada pantalla: título a la izquierda, dato a la derecha."""
+    largo = min(ancho(), 100) - 4
+    espacio = max(1, largo - len(texto) - len(derecha))
+    print()
+    print("  " + color(texto, "negrita", "cian") + " " * espacio + color(derecha, "tenue"))
+    print(color("  " + "─" * largo, "tenue"))
 
 
 def aviso(texto: str) -> None:

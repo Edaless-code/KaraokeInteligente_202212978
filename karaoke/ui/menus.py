@@ -28,20 +28,30 @@ from . import consola
 from .consola import Teclado, color
 from .pantalla import paginar
 
-OPCIONES_PRINCIPALES = [
-    ("m", "Modo manual (buscar con palabras y avanzar con la tecla c)"),
-    ("a", "Modo automático (escucha al cantante con inteligencia artificial)"),
-    ("f", "Modo alimentación (agregar canciones a la base de datos)"),
-    ("p", "Programa tentativo del cantante (archivo PROGRAMA)"),
-    ("w", "Ver todos los códigos y nombres de canciones (de 10 en 10)"),
-    ("x", "Ver la letra de una canción por su código (de 10 en 10)"),
-    ("u", "Corregir la letra de una canción (por nombre o código)"),
-    ("b", "Borrar una canción (por nombre o código)"),
-    ("h", "Historial y estadísticas"),
-    ("d", "Diagnóstico de audio (micrófono y limpieza del sonido)"),
-    ("k", "Configuración"),
-    ("s", "Salir"),
+# Menú principal agrupado por tareas: (sección, [(tecla, opción, explicación)]).
+SECCIONES_MENU = [
+    ("CANTAR", [
+        ("m", "Modo manual", "buscar con 2 o 3 palabras y avanzar con la tecla c"),
+        ("a", "Modo automático", "la inteligencia artificial escucha y sigue al cantante"),
+    ]),
+    ("CANCIONES", [
+        ("w", "Ver canciones", "códigos y nombres, de 10 en 10"),
+        ("x", "Ver una letra", "por su código, de 10 en 10"),
+        ("f", "Agregar canciones", "desde texto, escribiéndolas o desde MP3"),
+        ("u", "Corregir una letra", "por nombre o código"),
+        ("b", "Borrar una canción", "con confirmación; se puede recuperar"),
+    ]),
+    ("SESIÓN", [
+        ("p", "Programa del cantante", "archivo PROGRAMA y su avance"),
+        ("h", "Historial", "canciones cantadas y estadísticas"),
+    ]),
+    ("AJUSTES", [
+        ("d", "Diagnóstico de audio", "micrófono y limpieza del sonido"),
+        ("k", "Configuración", "dónde se cambian los valores"),
+        ("s", "Salir", ""),
+    ]),
 ]
+OPCIONES_PRINCIPALES = [(t, o) for _, opciones in SECCIONES_MENU for t, o, _ in opciones]
 
 
 class Aplicacion:
@@ -112,17 +122,8 @@ class Aplicacion:
             "d": self.diagnostico,
         }
         while True:
-            consola.limpiar()
-            consola.titulo("KARAOKE INTELIGENTE · Menú principal")
-            print(color(f"  Canciones en la base de datos: {self.bd.contar_canciones()}", "tenue"))
-            pendientes = len(self.bd.listar_temporales())
-            if pendientes:
-                consola.aviso(f"  Hay {pendientes} canción(es) aprendida(s) por revisar en (f) → (v).")
-            print()
-            for tecla, texto in OPCIONES_PRINCIPALES:
-                print(f"  ({color(tecla, 'negrita', 'amarillo')}) {texto}")
-            print()
-            opcion = self.teclado.linea(color("Elija una opción: ", "cian")).strip().lower()[:1]
+            self.dibujar_menu()
+            opcion = self.teclado.linea(color("  Elija una opción: ", "cian")).strip().lower()[:1]
             if opcion == "s":
                 return
             accion = acciones.get(opcion)
@@ -135,6 +136,20 @@ class Aplicacion:
             except Exception as ex:  # el programa nunca debe cerrarse por un error
                 consola.error(f"Ocurrió un error: {ex}")
                 self.teclado.pausa()
+
+    def dibujar_menu(self) -> None:
+        consola.limpiar()
+        total = self.bd.contar_canciones()
+        consola.titulo("KARAOKE INTELIGENTE", f"{total} {'canción' if total == 1 else 'canciones'}")
+        pendientes = len(self.bd.listar_temporales())
+        if pendientes:
+            consola.aviso(f"  Hay {pendientes} canción(es) aprendida(s) por revisar en f → v.")
+        for seccion, opciones in SECCIONES_MENU:
+            print()
+            print(color(f"  {seccion}", "tenue"))
+            for tecla, texto, explicacion in opciones:
+                print(f"    {color(tecla, 'negrita', 'cian')}   {texto:<24}" + color(explicacion, "tenue"))
+        print()
 
     # Los modos de canto se implementan en sus propios módulos.
     def modo_manual(self) -> None:

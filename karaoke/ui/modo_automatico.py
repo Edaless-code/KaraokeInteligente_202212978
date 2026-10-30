@@ -16,7 +16,6 @@ f finalizar.
 
 from __future__ import annotations
 
-import textwrap
 import time
 from typing import TYPE_CHECKING
 
@@ -31,21 +30,22 @@ from ..sincronia import LineaDeTiempo, desfase_pantalla
 from . import consola
 from .consola import color
 from .diagnostico import barra
-from .pantalla import VistaKaraoke, componer
+from .pantalla import VistaKaraoke, componer, encabezado, pie
 
 if TYPE_CHECKING:
     from .menus import Aplicacion
 
-AYUDA = ("[c] continuar  [a] atrás  [i] igual  [r] repetir  [g] ignorar  [s] seguir  "
-         "[n] siguiente del programa  [x] abandonar canción  [t] terminar de aprender  [f] finalizar")
+AYUDA = ("c continuar · a atrás · i igual · r repetir · g ignorar · s seguir · n siguiente del programa · "
+         "x otra canción · t terminar de aprender · d detalles · f finalizar")
 
+# Estado → (texto para el público, tono).
 ESTADOS = {
-    ESPERANDO: "ESCUCHANDO · cante para identificar la canción",
-    "siguiendo": "CANTANDO · siguiendo al cantante",
-    PAUSA: "EN PAUSA · sin voz (se reanuda solo)",
-    IGNORANDO: "IGNORANDO · presione (s) para seguir",
-    APRENDIENDO: "APRENDIENDO una canción nueva",
-    FIN: "FIN",
+    ESPERANDO: ("Escuchando · cante para identificar la canción", "cian"),
+    "siguiendo": ("Cantando · la letra sigue al cantante", "verde"),
+    PAUSA: ("En pausa · sin voz, se reanuda sola", "amarillo"),
+    IGNORANDO: ("Ignorando · presione s para seguir", "amarillo"),
+    APRENDIENDO: ("Aprendiendo una canción nueva", "magenta"),
+    FIN: ("Fin", "tenue"),
 }
 
 
@@ -164,6 +164,7 @@ class ModoAutomatico:
         cambio = True
         fin_audio = None
         self._ultima_pantalla = None
+        self.ver_detalles = False
         # Con una pista que suena por las bocinas el análisis va adelantado y la
         # pantalla muestra lo que corresponde a lo que se escucha (sincronía).
         retardo = getattr(procesador.fuente, "retardo", 0.0)
@@ -190,7 +191,10 @@ class ModoAutomatico:
                 control.vocabulario_pedido = None
             # 2. Teclas del operador (se ven de inmediato, sin el desfase).
             tecla = self.teclado.tecla(0.05)
-            if tecla:
+            if tecla == "d":
+                self.ver_detalles = not self.ver_detalles
+                cambio = True
+            elif tecla:
                 cambio = True
                 if not control.comando(tecla):
                     break
@@ -211,39 +215,58 @@ class ModoAutomatico:
 
     def dibujar(self, pantalla: EstadoPantalla, procesador: ProcesadorAudio,
                 nivel: float, voz: bool) -> None:
-        estado = ESTADOS.get(pantalla.estado, pantalla.estado.upper())
-        detalles = [f"Escuchado: {pantalla.escuchado[-70:]}" if pantalla.escuchado else "Escuchado: …",
-                    f"Sonido {barra(nivel, 20)} {'VOZ' if voz else '   '} · {procesador.fuente.nombre} · "
-                    f"{procesador.nombres_motores}"]
-        if pantalla.segundos_por_palabra:
-            detalles.append(f"Tempo del cantante: {pantalla.segundos_por_palabra:.2f} s por palabra")
-        if pantalla.siguiente_programa:
-            detalles.append(f"Siguiente en el programa: {pantalla.siguiente_programa}")
+        texto_estado, tono = ESTADOS.get(pantalla.estado, (pantalla.estado.capitalize(), "cian"))
+        # Los detalles técnicos cambian a cada instante: solo se muestran si se
+        # piden con (d); así la pantalla normal no se mueve mientras se canta.
+        detalles: list[str] = []
+        if self.ver_detalles:
+            detalles = [f"Escuchado: {pantalla.escuchado[-70:]}" if pantalla.escuchado else "Escuchado: …",
+                        f"Sonido {barra(nivel, 20)} {'voz' if voz else '   '} · {procesador.nombres_motores}",
+                        f"Fuente: {procesador.fuente.nombre}"]
+            if pantalla.segundos_por_palabra:
+                detalles.append(f"Tempo del cantante: {pantalla.segundos_por_palabra:.2f} s por palabra")
+        mensaje = pantalla.avisos[-1] if pantalla.avisos else ""
         if pantalla.cancion is not None:
             vista = VistaKaraoke(
                 nombre=pantalla.cancion.nombre, codigo=pantalla.cancion.codigo,
                 lineas=pantalla.cancion.lineas, actual=pantalla.linea, modo="automático",
-                estado=estado, mensaje=" · ".join(pantalla.avisos[-2:]), ayuda=AYUDA, detalles=detalles,
+                estado=texto_estado, tono_estado=tono, mensaje=mensaje, ayuda=AYUDA, detalles=detalles,
                 previas=self.config.entero("pantalla", "lineas_previas"),
                 siguientes=self.config.entero("pantalla", "lineas_siguientes"),
             )
             self._mostrar(componer(vista))
             return
+        self._mostrar(self._pantalla_sin_cancion(pantalla, texto_estado, tono, mensaje, detalles))
+
+    def _pantalla_sin_cancion(self, pantalla: EstadoPantalla, texto_estado: str, tono: str,
+                              mensaje: str, detalles: list[str]) -> list[str]:
+        """Mientras se identifica la canción (o se aprende una nueva)."""
         ancho = min(consola.ancho(), 100)
-        renglones = [color("═" * ancho, "cian"),
-                     color("  KARAOKE INTELIGENTE · modo automático", "negrita", "cian"),
-                     color("═" * ancho, "cian"), "",
-                     color(f"  {estado}", "negrita", "amarillo" if pantalla.estado != APRENDIENDO else "magenta"),
-                     ""]
+        alto = consola.alto()
+        renglones = encabezado("KARAOKE INTELIGENTE", "modo automático", ancho)
+        centro: list[str] = []
         if pantalla.estado == APRENDIENDO:
-            renglones.append(color("  Borrador de la letra (se revisa después en f → v):", "tenue"))
-            renglones += [f"    {linea}" for linea in pantalla.aprendidas]
-            renglones.append("")
-        renglones += [color(f"  {aviso}", "amarillo") for aviso in pantalla.avisos[-3:]]
-        renglones += [color(f"  {detalle}", "tenue") for detalle in detalles]
-        renglones.append(color("─" * ancho, "cian"))
-        renglones += [color("  " + parte, "cian") for parte in textwrap.wrap(AYUDA, ancho - 2)]
-        self._mostrar(renglones)
+            centro.append(color("  Canción nueva: se escribe un borrador de la letra", "negrita", "magenta"))
+            centro.append(color("  (se revisa y se guarda después en f → v)", "tenue"))
+            centro.append("")
+            centro += [f"     {linea}" for linea in pantalla.aprendidas]
+        else:
+            centro.append(color("  ♪  Escuchando…", "negrita", "texto"))
+            centro.append("")
+            centro.append(color("  Empiece a cantar (o reproduzca la pista): la canción se reconoce sola", "blanco"))
+            centro.append(color(f"  entre las {self.bd.contar_canciones()} canciones de la base de datos.", "blanco"))
+            if pantalla.siguiente_programa:
+                centro.append("")
+                centro.append(color(f"  Siguiente en el programa: {pantalla.siguiente_programa}", "cian"))
+        abajo = ["", "  " + color("● ", tono) + color(texto_estado, "negrita", tono),
+                 color(f"  {mensaje}", "amarillo") if mensaje else ""]
+        abajo += [color(f"  {detalle}", "tenue") for detalle in detalles]
+        abajo += pie(AYUDA, ancho)
+        libre = alto - len(renglones) - len(abajo) - 1
+        arriba = max(1, (libre - len(centro)) // 2)
+        renglones += [""] * arriba + centro
+        renglones += [""] * max(1, libre - arriba - len(centro))
+        return renglones + abajo
 
     def _mostrar(self, renglones: list[str]) -> None:
         if renglones != self._ultima_pantalla:

@@ -30,10 +30,8 @@ from .pantalla import VistaKaraoke, dibujar
 if TYPE_CHECKING:
     from .menus import Aplicacion
 
-AYUDA_CANCION = (
-    "[c/Enter] continuar  [i] igual  [r] repetir canción  [g] ignorar  [s] seguir  "
-    "[a] atrás  [b] buscar otra  [f] finalizar sesión"
-)
+AYUDA_CANCION = ("c continuar · i igual · r repetir · g ignorar · s seguir · a atrás · "
+                 "b otra canción · f finalizar")
 
 
 class ModoManual:
@@ -183,7 +181,7 @@ class ModoManual:
 
     # ------------------------------------------------------------ cantar
     def vista(self, curso: CancionEnCurso) -> VistaKaraoke:
-        estado = "IGNORANDO (pausa)" if curso.pausada else "CANTANDO"
+        estado = "En pausa · presione s para seguir" if curso.pausada else "Cantando"
         if curso.repeticiones_cancion:
             estado += f" · repetición {curso.repeticiones_cancion + 1}"
         return VistaKaraoke(
@@ -193,6 +191,7 @@ class ModoManual:
             actual=curso.actual,
             modo="manual",
             estado=estado,
+            tono_estado="amarillo" if curso.pausada else "verde",
             mensaje=curso.mensaje,
             ayuda=AYUDA_CANCION,
             previas=self.config.entero("pantalla", "lineas_previas"),
