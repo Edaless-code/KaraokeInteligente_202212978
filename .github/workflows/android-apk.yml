@@ -67,7 +67,10 @@ jobs:
           PIP_CONSTRAINT: ${{ github.workspace }}/movil/restricciones-pip.txt
         run: |
           set -o pipefail
-          yes | buildozer -v android debug 2>&1 | tee buildozer.log | grep -E "^\[INFO\]|^\[WARNING\]|error|Error|APK" | tail -n 200
+          # "yes" acepta las licencias; al terminar buildozer recibe SIGPIPE (141):
+          # "|| true" evita que pipefail lo cuente como fallo. El que importa es buildozer.
+          (yes || true) | buildozer -v android debug 2>&1 | tee buildozer.log | grep -E "^\[INFO\]|^\[WARNING\]|error|Error|APK" | tail -n 200
+          ls bin/*.apk
       - name: Registro de Buildozer (si falla)
         if: failure()
         run: tail -n 250 movil/buildozer.log || true
