@@ -57,3 +57,36 @@ jobs:
           done
       - name: Transcribir
         run: python herramientas/transcribir.py ${{ matrix.audio }} ${{ matrix.opciones }}
+
+  automatico:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        audio: [ejemplos/Sound_of_You.mp3, ejemplos/Ghost_of_you_Remastered.mp3]
+    name: Modo automático de punta a punta · ${{ matrix.audio }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt faster-whisper
+      - name: Modelos de voz en caché
+        uses: actions/cache@v4
+        with:
+          path: |
+            modelo
+            ~/.cache/huggingface
+          key: modelos-voz-v2
+      - name: Descargar modelos de Vosk
+        run: |
+          mkdir -p modelo
+          for m in vosk-model-small-es-0.42 vosk-model-small-en-us-0.15; do
+            if [ ! -d "modelo/$m" ]; then
+              curl -sSL -o "$m.zip" "https://alphacephei.com/vosk/models/$m.zip"
+              unzip -q "$m.zip" -d modelo && rm "$m.zip"
+            fi
+          done
+      - name: Simular el modo automático (Vosk + Whisper)
+        run: python herramientas/simular_automatico.py ${{ matrix.audio }} --motor hibrido

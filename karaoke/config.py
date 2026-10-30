@@ -54,8 +54,12 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "evidencia_minima": "2.5",
     },
     "audio": {
-        # Motor de transcripción: vosk | whisper | simulado
-        "motor": "vosk",
+        # Motor de transcripción:
+        #   hibrido  Vosk sigue la letra en tiempo real y Whisper (si está
+        #            instalado) identifica la canción y confirma la posición.
+        #   vosk     solo Vosk (más ligero).
+        #   whisper  solo Whisper (más preciso con música, más lento).
+        "motor": "hibrido",
         # Carpetas de los modelos de Vosk de cada idioma (relativas a la
         # carpeta del programa). Si faltan, el programa ofrece descargarlos.
         "modelo_vosk_es": "modelo/vosk-model-small-es-0.42",

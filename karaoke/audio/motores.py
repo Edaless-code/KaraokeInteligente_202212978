@@ -171,6 +171,20 @@ class MotorVosk(Motor):
             self.restringido.reiniciar()
 
 
+_ALUCINACIONES = {"music", "música", "musica", "applause", "aplausos", "silence", "subtitles",
+                  "thank you", "thanks for watching", "gracias"}
+
+
+def es_alucinacion(texto: str) -> bool:
+    """Whisper a veces "inventa" texto en la música o el silencio ("Music",
+    "2.5%", "Thanks for watching"). Se descarta lo que no tiene letras o es
+    una de esas frases típicas."""
+    limpio = re.sub(r"[^\w\s]", " ", texto.lower()).strip()
+    if not re.search(r"[a-záéíóúñ]{2,}", limpio):
+        return True
+    return " ".join(limpio.split()) in _ALUCINACIONES
+
+
 class MotorWhisper(Motor):
     """Transcribe ventanas de ``ventana`` segundos con faster-whisper.
 
@@ -211,9 +225,9 @@ class MotorWhisper(Motor):
 
     def restringir(self, vocabulario: set[str] | None, idioma: str | None = None) -> None:
         # Whisper no admite una gramática; se le da la letra como "sugerencia".
+        # Sin canción se vuelve a detectar el idioma automáticamente.
         self.sugerencia = " ".join(sorted(vocabulario))[:600] if vocabulario else None
-        if idioma:
-            self.idioma = idioma
+        self.idioma = idioma if vocabulario and idioma else "auto"
 
     def _transcribir(self, muestras: np.ndarray, segundo: float) -> None:
         # Con idioma "auto" Whisper detecta el idioma de cada ventana (canciones
@@ -225,7 +239,7 @@ class MotorWhisper(Motor):
         )
         for segmento in segmentos:
             texto = segmento.text.strip()
-            if texto:
+            if texto and not es_alucinacion(texto):
                 self._resultados.put(Transcripcion(
                     "final", texto, "libre", informacion.language or self.idioma,
                     float(math.exp(segmento.avg_logprob)), segundo,
