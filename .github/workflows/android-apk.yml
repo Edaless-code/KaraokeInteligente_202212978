@@ -9,12 +9,13 @@ on:
       - "karaoke/**"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
+  workflow_call:   # lo usa el flujo "Publicar versión"
 
 permissions:
   contents: write
 
 concurrency:
-  group: apk-${{ github.ref }}
+  group: apk-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

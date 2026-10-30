@@ -1,0 +1,57 @@
+name: Publicar versión
+
+# Al cambiar el archivo VERSION se construyen el .exe y la APK y se publica (o
+# actualiza) la versión en Releases con la etiqueta escrita en ese archivo. Si
+# la etiqueta lleva un guion (por ejemplo v1.0.0-rc1) se marca como pre-versión.
+on:
+  push:
+    paths: ["VERSION"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    uses: ./.github/workflows/windows-exe.yml
+
+  android:
+    uses: ./.github/workflows/android-apk.yml
+
+  publicar:
+    needs: [windows, android]
+    if: always() && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leer la versión
+        id: version
+        run: echo "etiqueta=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Descargar el .exe y la APK
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Archivos que se publican
+        run: ls -la dist
+
+      - name: Crear o actualizar la versión en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.etiqueta }}
+          target_commitish: ${{ github.sha }}
+          name: Karaoke Inteligente ${{ steps.version.outputs.etiqueta }}
+          prerelease: ${{ contains(steps.version.outputs.etiqueta, '-') }}
+          files: dist/*
+          body: |
+            **Karaoke Inteligente**, de Edgar Alessandro Chocon Oliva (carné 202212978).
+
+            | Archivo | Plataforma | Cómo usarlo |
+            |---|---|---|
+            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir y abrir `KaraokeInteligente.exe`. Incluye los modelos de voz (funciona sin internet). |
+            | `KaraokeInteligente-Android.apk` | Android 7.0 o superior | Abrir el archivo en el teléfono y permitir la instalación. |
+
+            Instrucciones completas en el [README](https://github.com/${{ github.repository }}#readme) y en `docs/`.

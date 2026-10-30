@@ -4,14 +4,15 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
-    paths-ignore: ["movil/**", "docs/**", "*.md"]
+    paths-ignore: ["movil/**", "docs/**", "*.md", "VERSION"]
   workflow_dispatch:
+  workflow_call:   # lo usa el flujo "Publicar versión"
 
 permissions:
   contents: write
 
 concurrency:
-  group: exe-${{ github.ref }}
+  group: exe-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
