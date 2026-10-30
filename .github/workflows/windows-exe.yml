@@ -53,9 +53,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: modelos-cache
-          key: modelos-windows-v1
+          key: modelos-windows-v2
 
-      - name: Descargar los modelos de voz (Vosk español e inglés, Whisper base)
+      - name: Descargar los modelos de voz (Vosk español e inglés, Whisper base y small)
         run: |
           $ProgressPreference = "SilentlyContinue"   # la barra de progreso vuelve lentísima la descarga
           New-Item -ItemType Directory -Force modelos-cache | Out-Null
@@ -68,6 +68,10 @@ jobs:
           }
           if (-not (Test-Path "modelos-cache/whisper-base/model.bin")) {
             python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-base', local_dir='modelos-cache/whisper-base')"
+          }
+          # small: más preciso para escribir letras desde un MP3 (f → m)
+          if (-not (Test-Path "modelos-cache/whisper-small/model.bin")) {
+            python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-small', local_dir='modelos-cache/whisper-small')"
           }
           Copy-Item -Recurse modelos-cache "$env:DESTINO/modelo"
           Get-ChildItem "$env:DESTINO/modelo"

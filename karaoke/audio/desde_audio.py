@@ -103,8 +103,12 @@ def frases_por_pausas(palabras: list[Palabra], pausa: float = 0.55, maximo: int 
             anterior = actual[-1]
             limpio = texto.strip("¿¡\"'(").lower()
             nuevo_verso = (texto[:1].isupper() and limpio not in _MAYUSCULA_NORMAL and len(actual) >= 3)
-            largo = len(" ".join(p.texto for p in actual)) + 1 + len(texto) > maximo
-            if (palabra.inicio - anterior.fin >= pausa or anterior.texto.rstrip().endswith((".", "?", "!"))
+            largo_actual = len(" ".join(p.texto for p in actual))
+            largo = largo_actual + 1 + len(texto) > maximo
+            # Una línea que ya es larga se corta también en un respiro corto.
+            silencio = palabra.inicio - anterior.fin
+            respiro = largo_actual >= 40 and silencio >= pausa * 0.4
+            if (silencio >= pausa or respiro or anterior.texto.rstrip().endswith((".", "?", "!"))
                     or nuevo_verso or largo):
                 cerrar()
         actual.append(Palabra(texto, palabra.inicio, palabra.fin))
@@ -222,10 +226,12 @@ def _con_vosk(muestras: np.ndarray, config: Config, idioma: str | None,
 
 def crear_borrador(ruta: Path, config: Config, idioma: str | None = None,
                    progreso: Progreso | None = None, modelo: str | None = None,
-                   aislar: bool = True) -> Borrador:
+                   aislar: bool | None = None) -> Borrador:
     """Transcribe ``ruta`` y devuelve el borrador de la canción."""
     from .proceso import whisper_disponible
 
+    if aislar is None:
+        aislar = config.booleano("audio", "aislar_voz_letras")
     muestras = leer_voz(ruta, aislar)
     if whisper_disponible():
         palabras, idioma_final, motor = _con_whisper(muestras, config, idioma, progreso, modelo)

@@ -361,6 +361,19 @@ Las mediciones se hicieron en GitHub Actions (`.github/workflows/prueba-voz.yml`
 | Sound of You | a los 21 s, línea 1 | las 24 líneas, completa a los 2:26 |
 | Ghost of you | a los 16 s, línea 2 | las 19 líneas, incluidas las de español; completa a los 1:53 |
 
+### 7.1 Escribir la letra desde un MP3 (*f → m*)
+
+Se midió qué tanto se parece la letra que escribe la IA a la letra real (porcentaje de palabras en el mismo orden, `herramientas/borrador_desde_audio.py`):
+
+| Configuración | Sound of You | Ghost of you |
+|---|---|---|
+| Whisper base, voz aislada (primera versión) | 41 % | 81 % |
+| Whisper base, mezcla original | 89 % | 68 % |
+| Whisper small, voz aislada | 90 % | 84 % |
+| **Whisper small, mezcla original (elegida)** | **91 %** | **87 %** |
+
+Además de usar el modelo *small*, las líneas se cortan con las **marcas de tiempo de cada palabra**: en las pausas del cantante, al inicio de cada verso (palabra con mayúscula) y en respiros cortos si la línea ya es larga. Antes Whisper juntaba dos versos en una línea. Cada línea guarda el segundo en que empieza en la pista.
+
 ---
 
 ## 8. Configuración (`karaoke.ini`)
