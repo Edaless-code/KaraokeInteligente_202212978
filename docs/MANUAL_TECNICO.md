@@ -118,7 +118,9 @@ El programa está en capas. El núcleo (datos, búsqueda y lógica del karaoke) 
 | `karaoke/audio/motores.py` | `MotorVosk`, `MotorWhisper` y `MotorSimulado` con una misma interfaz |
 | `karaoke/audio/modelos.py` | Ubicación, validación y descarga de los modelos de Vosk |
 | `karaoke/audio/proceso.py` | Cadena fuente → limpieza → motores en un hilo aparte |
-| `karaoke/ui/*` | Menús, pantalla del karaoke, modos manual y automático, diagnóstico de audio |
+| `karaoke/audio/desde_audio.py` | *f → m*: transcribe una pista completa con Whisper (Vosk si no está), la convierte en líneas (descarta alucinaciones, separa oraciones, corta bucles de la IA, oculta groserías) y copia la pista a `pistas/` |
+| `karaoke/sincronia.py` | Línea de tiempo que muestra la letra adelantada a la voz cuando la pista suena por las bocinas |
+| `karaoke/ui/*` | Menús, pantalla del karaoke (diseño fijo en pantalla alterna, redibujo solo al cambiar), modos manual y automático, agregar desde audio, diagnóstico de audio |
 | `herramientas/transcribir.py` | Mide la transcripción de un audio con cada motor (sección 7) |
 | `herramientas/simular_automatico.py` | Atajo para `karaoke/simulacion.py` |
 
@@ -166,10 +168,11 @@ Archivo: **`CANCIONES.db`**, junto al programa. El nombre se configura en `[base
 |---|---|---|
 | `TEMP_NOMBRES` | `id_temporal`, `nombre_sugerido`, `fecha_registro`, `motor`, `estado` | Canciones **aprendidas** por el modo automático que aún no se revisan |
 | `TEMP_LETRAS` | `id`, `id_temporal` (FK, cascada), `numero_linea`, `linea`, `confianza` | Letra transcrita de esas canciones |
+| `PISTAS` | `codigo` (PK y FK, cascada), `archivo`, `fecha_registro` | Pista de audio de cada canción agregada con *f → m*; la ruta es relativa a la carpeta del programa (`pistas/…`) |
 | `PROGRAMA` | `orden`, `nombre_solicitado`, `codigo` (FK, `ON DELETE SET NULL`), `estado` | Programa del cantante: `pendiente`, `cantada` o `saltada` |
 | `SESIONES` | `id_sesion`, `modo`, `inicio`, `fin` | Cada sesión de karaoke |
 | `HISTORIAL` | `id`, `id_sesion`, `codigo`, `nombre_cancion`, `modo`, `inicio`, `fin`, `lineas_mostradas`, `completada` | Cada interpretación, para la opción *h* |
-| `METADATOS` | `clave`, `valor` | Versión del esquema (actualmente **2**) y fecha de creación |
+| `METADATOS` | `clave`, `valor` | Versión del esquema (actualmente **3**: la 2 agregó la papelera y la 3 la tabla `PISTAS`; antes de migrar se respalda la base) y fecha de creación |
 
 ### Papelera
 

@@ -146,13 +146,13 @@ La app tiene cuatro pestañas abajo:
 
 ## 4. Menú principal
 
-En cada menú se escribe la letra de la opción y se presiona **Enter**.
+En cada menú se escribe la letra de la opción y se presiona **Enter**. El menú está agrupado en cuatro secciones: **Cantar**, **Canciones**, **Sesión** y **Ajustes**.
 
 | Tecla | Opción | Descripción |
 |---|---|---|
 | **m** | Modo manual | Buscar la canción con palabras y avanzar con **c** |
 | **a** | Modo automático | La IA escucha, identifica y avanza sola |
-| **f** | Modo alimentación | Agregar canciones desde un archivo (t) o escribiéndolas (e) |
+| **f** | Modo alimentación | Agregar canciones desde un archivo de texto (t), escribiéndolas (e) o desde un MP3 (m) |
 | **p** | Programa del cantante | Cargar la lista preplaneada de canciones (archivo PROGRAMA) |
 | **w** | Ver canciones | Todos los códigos y nombres, de 10 en 10 |
 | **x** | Ver una letra | Se ingresa el código y se despliega la letra de 10 en 10 |
@@ -188,7 +188,13 @@ En la pantalla de búsqueda se puede:
 
 ### 5.2 Durante la canción
 
-La pantalla muestra en tono tenue la línea anterior. La línea que **toca cantar** aparece en **grande y amarilla, con ►**, y debajo se ven las siguientes. Aquí basta con presionar la tecla, **sin Enter**:
+La pantalla del karaoke tiene siempre el mismo diseño, pensado para leerse de lejos:
+
+- arriba, el **nombre de la canción** y una **barra de avance** (por ejemplo, *3 de 24*);
+- en medio, la **letra centrada**: la línea anterior en gris, la que **toca cantar** resaltada con **►** y las dos siguientes como adelanto;
+- abajo, una sola línea de **estado** (Cantando, En pausa…) y las teclas.
+
+La letra no "salta" ni parpadea: la pantalla solo cambia cuando cambia la línea. Aquí basta con presionar la tecla, **sin Enter**:
 
 | Tecla | Acción |
 |---|---|
@@ -211,7 +217,7 @@ Al terminar la última línea, la canción se registra como cantada, se marca en
 
 1. Elija de dónde llega el sonido:
    - **m: micrófono**, para el karaoke en vivo. Antes, conviene elegir el micrófono en **d** (Diagnóstico).
-   - **a: archivo de audio** MP3, WAV, FLAC u OGG, para probar el programa o acompañar una pista grabada. Se puede indicar desde qué segundo empezar y si se reproduce por las bocinas.
+   - **a: archivo de audio** MP3, WAV, FLAC u OGG, para probar el programa o acompañar una pista grabada. Se muestran **numeradas** las pistas de la biblioteca (las agregadas con **f → m**) y las de ejemplo; basta escribir el número. También se puede escribir la ruta de cualquier archivo. Se puede indicar desde qué segundo empezar y si se reproduce por las bocinas.
 2. Al empezar, **guarde silencio 1 o 2 segundos**. El programa mide el ruido del lugar para poder limpiarlo.
 3. Cante. El programa:
    - **identifica la canción** con lo que escucha, dando prioridad a la siguiente del PROGRAMA;
@@ -223,7 +229,9 @@ Al terminar la última línea, la canción se registra como cantada, se marca en
    - si la canción **no está en la base de datos**, la **aprende**: guarda la letra que escucha en tablas temporales y sugiere un nombre. Después se revisa en **f → v**;
    - al terminar una canción, espera la siguiente.
 
-Abajo de la pantalla se ve lo último que escuchó, el nivel del sonido y si hay voz, el tempo del cantante y la siguiente canción del programa.
+**La letra va adelantada a la voz.** Con una pista que suena por las bocinas, el programa la analiza **3 segundos antes** de que se escuche y muestra cada línea **medio segundo antes** de que se cante, para alcanzar a leerla y entrar a tiempo (como los subtítulos de un video). Con micrófono en vivo, la línea siguiente aparece un poco antes de que termine la actual. Los tiempos se ajustan en `karaoke.ini` (`segundos_analisis_adelantado` y `segundos_letra_adelantada`).
+
+La pantalla es la misma del modo manual. Mientras identifica la canción muestra **"Escuchando…"**, y si aprende una canción nueva muestra el borrador de su letra. Los **detalles técnicos** (lo último que escuchó la IA, el nivel del sonido y si hay voz, el tempo del cantante) se ocultan para que la pantalla no se mueva; se muestran u ocultan con la tecla **d**.
 
 Las teclas del modo manual siguen funcionando **para corregir lo que haga la IA**, en cualquier momento:
 
@@ -236,6 +244,7 @@ Las teclas del modo manual siguen funcionando **para corregir lo que haga la IA*
 | **n** *(agregada)* | Cantar ya la siguiente canción del programa |
 | **x** *(agregada)* | Abandonar la canción actual y esperar otra |
 | **t** *(agregada)* | Terminar de aprender la canción nueva |
+| **d** *(agregada)* | Mostrar u ocultar los detalles técnicos |
 | **f** | Finalizar la sesión |
 
 **Consejos para que funcione mejor:**
@@ -252,10 +261,30 @@ Las teclas del modo manual siguen funcionando **para corregir lo que haga la IA*
 |---|---|
 | **t** | **Leer un archivo de texto plano.** Se escribe la ruta (Enter = `canciones.txt` junto al programa). Se informa cuáles canciones se agregaron, cuáles se omitieron (por ejemplo, si ya existían) y cuántas líneas largas se ajustaron. |
 | **e** | **Escribir en pantalla, campo por campo.** Primero aparece el campo del **nombre de la canción**, luego **Línea 1**, **Línea 2**, etc. **Dejar una línea vacía termina la canción.** |
+| **m** *(agregada)* | **Agregar canciones desde archivos de audio** (MP3, WAV, FLAC u OGG). Ver abajo. |
 | **v** | **Revisar las canciones aprendidas** por el modo automático: corregir su letra, ponerles nombre y pasarlas a la base de datos permanente, o descartarlas. |
 | **r** | Regresar |
 
 El **código** de cada canción **se genera automáticamente**: 1, 2, 3… y nunca se reutiliza, aunque se borre una canción.
+
+### Agregar canciones desde un MP3 (f → m)
+
+La forma más fácil de agregar una canción propia es darle al programa la pista grabada:
+
+1. Escriba la ruta de **un archivo** o de **una carpeta** con varias pistas. En Windows se puede **arrastrar el archivo a la ventana** en lugar de escribir la ruta.
+2. Indique el idioma (**es** o **en**) o presione **Enter** para que se detecte solo.
+3. La IA (Whisper) escucha la canción completa y escribe un **borrador de la letra**, una frase cantada por línea. Tarda alrededor de un minuto por canción; se ve el avance en porcentaje.
+4. Revise el borrador, porque la IA puede equivocarse en algunas palabras:
+
+| Tecla | Acción |
+|---|---|
+| **g** | Guardar la canción en la base de datos, con su pista |
+| **e** | Editar la letra línea por línea (corregir, insertar, borrar) |
+| **n** | Cambiar el nombre (se sugiere a partir del nombre del archivo) |
+| **v** | Dejarla para revisar después en **f → v** |
+| **d** | Descartar el borrador |
+
+La pista se copia a la carpeta **`pistas`** junto al programa y queda asociada a la canción, para cantarla en el modo automático eligiéndola por número. Si ya existe una canción con ese nombre (por ejemplo, porque se cargó desde `canciones.txt`), el programa ofrece **solo asociarle la pista** sin cambiar su letra.
 
 ---
 
