@@ -9,6 +9,7 @@ Menú principal (primer nivel):
     (u) corregir la letra de una canción
     (b) borrar una canción
     (h) historial y estadísticas   (extra)
+    (d) diagnóstico de audio       (extra)
     (k) configuración              (extra)
     (s) salir
 """
@@ -37,6 +38,7 @@ OPCIONES_PRINCIPALES = [
     ("u", "Corregir la letra de una canción (por nombre o código)"),
     ("b", "Borrar una canción (por nombre o código)"),
     ("h", "Historial y estadísticas"),
+    ("d", "Diagnóstico de audio (micrófono y limpieza del sonido)"),
     ("k", "Configuración"),
     ("s", "Salir"),
 ]
@@ -103,6 +105,7 @@ class Aplicacion:
             "b": self.borrar_cancion,
             "h": self.ver_historial,
             "k": self.ver_configuracion,
+            "d": self.diagnostico,
         }
         while True:
             consola.limpiar()
@@ -134,6 +137,11 @@ class Aplicacion:
         from .modo_manual import ModoManual
 
         ModoManual(self).ejecutar()
+
+    def diagnostico(self) -> None:
+        from .diagnostico import Diagnostico
+
+        Diagnostico(self).ejecutar()
 
     def modo_automatico(self) -> None:
         consola.aviso("El modo automático estará disponible en la siguiente versión.")

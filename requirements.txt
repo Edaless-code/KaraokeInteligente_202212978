@@ -1,0 +1,5 @@
+# Dependencias del Karaoke Inteligente (pip install -r requirements.txt)
+numpy>=1.24          # limpieza del sonido (STFT, filtros)
+sounddevice>=0.4.6   # micrófono y bocinas (PortAudio)
+miniaudio>=1.59      # lectura de MP3/WAV/FLAC/OGG sin ffmpeg
+vosk>=0.3.45         # reconocimiento de voz sin conexión (modo automático)
