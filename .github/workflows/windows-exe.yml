@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: exe-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   exe:
     runs-on: windows-latest
@@ -51,11 +55,12 @@ jobs:
 
       - name: Descargar los modelos de voz (Vosk español e inglés, Whisper base)
         run: |
+          $ProgressPreference = "SilentlyContinue"   # la barra de progreso vuelve lentísima la descarga
           New-Item -ItemType Directory -Force modelos-cache | Out-Null
           foreach ($m in "vosk-model-small-es-0.42", "vosk-model-small-en-us-0.15") {
             if (-not (Test-Path "modelos-cache/$m")) {
-              Invoke-WebRequest "https://alphacephei.com/vosk/models/$m.zip" -OutFile "$m.zip"
-              Expand-Archive "$m.zip" -DestinationPath modelos-cache
+              curl.exe -sSL --retry 3 -o "$m.zip" "https://alphacephei.com/vosk/models/$m.zip"
+              tar -xf "$m.zip" -C modelos-cache
               Remove-Item "$m.zip"
             }
           }
@@ -89,7 +94,10 @@ jobs:
           if (Test-Path "$env:DESTINO/karaoke.ini") { Remove-Item "$env:DESTINO/karaoke.ini" }
 
       - name: Comprimir
-        run: Compress-Archive -Path "$env:DESTINO" -DestinationPath KaraokeInteligente-Windows.zip
+        run: |
+          $ProgressPreference = "SilentlyContinue"
+          Compress-Archive -Path "$env:DESTINO" -DestinationPath KaraokeInteligente-Windows.zip
+          "{0:N0} MB" -f ((Get-Item KaraokeInteligente-Windows.zip).Length / 1MB)
 
       - name: Publicar como artefacto
         uses: actions/upload-artifact@v4
