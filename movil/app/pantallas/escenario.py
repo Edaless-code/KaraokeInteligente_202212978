@@ -456,6 +456,7 @@ class Escenario(Pantalla):
         self.reproduccion = None
         self._tiempos: list[float] = []
         self._cancion_pista = None
+        self._afinando = ""
 
     # ------------------------------------------------------------ entrada
     def al_entrar(self, modo: str = "manual", codigo: int | None = None, linea: int = 0, **_):
@@ -592,6 +593,9 @@ class Escenario(Pantalla):
         ruta = self.app.carpeta / archivo if archivo else None
         self._cancion_pista = cancion
         self.titulo_cancion = cancion.nombre if cancion else "Sin canción"
+        # No arrastrar nada del modo anterior (automático o manual).
+        self.subtitulo, self.mensaje, self.progreso, self._afinando = "", "", 0.0, ""
+        self._estado("PREPARANDO", T.SECUNDARIO_TEXTO, T.SECUNDARIO_SUAVE)
         if cancion is None or ruta is None or not ruta.exists():
             self._mensaje_pista("Esta canción no tiene pista de audio.")
             return
@@ -611,31 +615,39 @@ class Escenario(Pantalla):
         except Exception:
             con_whisper = False
         if self.reproduccion.voz_disponible and con_whisper:
-            # Computadora: la IA sincroniza la letra una sola vez (~1 min).
-            self._mensaje_pista("Sincronizando la letra con la pista…", "Solo la primera vez · alrededor de un minuto")
+            # Computadora: la canción empieza YA con tiempos aproximados y la IA
+            # afina la sincronía en segundo plano (solo la primera vez).
+            self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
+            self._afinando = "Afinando la sincronía con IA… (solo la primera vez)"
             threading.Thread(target=self._sincronizar, args=(codigo, cancion.lineas, ruta), daemon=True).start()
         else:
             # Teléfono: tiempos aproximados (se afinan al abrirla en la computadora).
             # Teléfono, o computadora sin Whisper: tiempos aproximados.
             self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
-            self.mensaje = ("Tiempos aproximados · para la sincronía exacta: pip install faster-whisper"
+            self._afinando = ("Tiempos aproximados · para la sincronía exacta: pip install faster-whisper"
                             if self.reproduccion.voz_disponible else "Letra con tiempos aproximados")
 
     def _sincronizar(self, codigo, lineas, ruta):
         try:
             from karaoke.audio.desde_audio import sincronizar
 
-            tiempos = sincronizar(ruta, self.app.config_karaoke, lineas)
+            def progreso(fraccion):
+                texto = f"Afinando la sincronía con IA… {int(fraccion * 100)} %"
+                Clock.schedule_once(lambda *_: setattr(self, "_afinando", texto), 0)
+
+            tiempos = sincronizar(ruta, self.app.config_karaoke, lineas, progreso)
         except Exception as ex:
-            error = f"No se pudo sincronizar: {ex}"
-            Clock.schedule_once(lambda *_: self._mensaje_pista(error), 0)
+            error = f"Tiempos aproximados (no se pudo afinar: {ex})"
+            Clock.schedule_once(lambda *_: setattr(self, "_afinando", error), 0)
             return
 
         def listo(*_):
+            self.app.bd.guardar_tiempos(codigo, tiempos)  # la próxima vez empieza exacta
             if self.reproduccion is None:  # se salió mientras sincronizaba
                 return
-            self.app.bd.guardar_tiempos(codigo, tiempos)
-            self._arrancar_pista(tiempos)
+            self._tiempos = tiempos  # se cambian sin detener la canción
+            self._afinando = "Sincronía exacta lista"
+            Clock.schedule_once(lambda *_: setattr(self, "_afinando", ""), 3)
 
         Clock.schedule_once(listo, 0)
 
@@ -721,12 +733,11 @@ class Escenario(Pantalla):
             self._estado("SONANDO", T.EXITO, T.EXITO_SUAVE)
         if actual < 0:
             faltan = max(0, int(self._tiempos[0] - adelanto - segundo + 0.99))
-            self.mensaje = f"La letra empieza en {faltan} s"
+            self.mensaje = " · ".join(t for t in (f"La letra empieza en {faltan} s", self._afinando) if t)
             self._pintar_lineas(cancion.lineas, 0)
             self.linea_previa = ""
             return
-        if self.mensaje.startswith("La letra empieza"):
-            self.mensaje = ""
+        self.mensaje = self._afinando
         self._pintar_lineas(cancion.lineas, actual)
 
     def _controles_normales(self):
