@@ -75,8 +75,13 @@ def alinear(
     umbral: float,
     desde: int = 0,
     hasta: int | None = None,
+    exigir_ultima: bool = False,
 ) -> tuple[float, int, int]:
     """Alineamiento local de ``consulta`` contra ``letra[desde:hasta]``.
+
+    Con ``exigir_ultima`` solo se aceptan alineamientos que terminan en la
+    última palabra de la consulta (lo que importa al seguir al cantante es
+    dónde está AHORA, no la coincidencia más larga del pasado).
 
     Devuelve (puntaje bruto, índice de la primera palabra alineada, índice de
     la última palabra alineada) con índices absolutos en ``letra``.
@@ -91,6 +96,7 @@ def alinear(
     anterior = [0.0] * (columnas + 1)
     inicio_anterior = [-1] * (columnas + 1)
     mejor, mejor_ini, mejor_fin = 0.0, -1, -1
+    ultima = len(consulta) - 1
     for i, palabra in enumerate(consulta):
         peso = pesos[i]
         hueco_consulta = 0.5 * peso  # palabra escuchada que no está en la letra
@@ -115,7 +121,8 @@ def alinear(
             actual[j] = valor
             inicio_actual[j] = ini
             # Solo cuenta como final una columna donde hubo coincidencia real.
-            if valor > mejor and parecido >= umbral and diagonal == valor:
+            if (valor > mejor and parecido >= umbral and diagonal == valor
+                    and (not exigir_ultima or i == ultima)):
                 mejor, mejor_ini, mejor_fin = valor, ini, desde + j - 1
         anterior, inicio_anterior = actual, inicio_actual
     return mejor, mejor_ini, mejor_fin
