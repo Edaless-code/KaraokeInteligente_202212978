@@ -198,8 +198,9 @@ class LimpiadorAudio:
                 factor = 0.5 if deseada < self._agc else 0.05
                 self._agc += factor * (deseada - self._agc)
             salida = salida * self._agc
-            # Limitador suave: nunca satura.
-            salida = np.tanh(salida * 1.1) / np.tanh(1.1)
+            # Limitador suave: casi lineal en volumen normal y nunca pasa de 1
+            # (no satura aunque el cantante grite pegado al micrófono).
+            salida = np.tanh(salida)
         self.nivel_db = nivel_db(salida)
         return salida.astype(np.float32)
 

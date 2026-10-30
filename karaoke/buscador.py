@@ -50,6 +50,12 @@ class Resultado:
     linea_fin: int  # índice (base 0) de la línea donde termina
     palabra_siguiente: int  # índice de la palabra que sigue a la coincidencia
     evidencia: float = 0.0  # peso de las palabras que coincidieron
+    bono: float = 0.0  # prioridad extra (siguiente del PROGRAMA)
+
+    @property
+    def orden(self) -> float:
+        """Puntaje para ordenar y desempatar (puede pasar de 1 con el bono)."""
+        return self.puntaje + self.bono
 
     @property
     def linea_actual(self) -> int:
@@ -228,8 +234,7 @@ class Buscador:
             if fin < 0:
                 continue
             puntaje = min(1.0, bruto / total)
-            if prioridad and codigo in prioridad:
-                puntaje = min(1.0, puntaje + prioridad[codigo])
+            bono = prioridad.get(codigo, 0.0) if prioridad else 0.0
             resultados.append(
                 Resultado(
                     codigo,
@@ -239,9 +244,10 @@ class Buscador:
                     indice.linea_de[fin],
                     fin + 1,
                     round(bruto, 3),
+                    bono,
                 )
             )
-        resultados.sort(key=lambda r: (-r.puntaje, r.codigo))
+        resultados.sort(key=lambda r: (-r.orden, r.codigo))
         return resultados[: limite or self.maximo_resultados]
 
     def identificar(
@@ -259,8 +265,8 @@ class Buscador:
         resultados = self.buscar(texto, prioridad, limite=2)
         minimo = self.puntaje_minimo if minimo is None else minimo
         evidencia = self.evidencia_minima if evidencia is None else evidencia
-        if not resultados or resultados[0].puntaje < minimo or resultados[0].evidencia < evidencia:
+        if not resultados or resultados[0].orden < minimo or resultados[0].evidencia < evidencia:
             return None
-        if len(resultados) > 1 and resultados[0].puntaje - resultados[1].puntaje < margen:
+        if len(resultados) > 1 and resultados[0].orden - resultados[1].orden < margen:
             return None
         return resultados[0]
