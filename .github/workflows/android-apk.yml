@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq git zip unzip openjdk-17-jdk autoconf automake libtool \
-            pkg-config zlib1g-dev libncurses-dev libtinfo6 cmake libffi-dev libssl-dev
+            pkg-config zlib1g-dev libncurses-dev libtinfo6 cmake libffi-dev libssl-dev libltdl-dev gettext
           pip install --upgrade "buildozer==1.5.0" "cython<3.1" setuptools
 
       - name: Pruebas del núcleo
@@ -56,9 +56,15 @@ jobs:
 
       - name: Compilar la APK
         working-directory: movil
+        shell: bash   # con pipefail: si buildozer falla, el paso falla
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-        run: yes | buildozer -v android debug 2>&1 | tail -n 300
+        run: |
+          set -o pipefail
+          yes | buildozer -v android debug 2>&1 | tee buildozer.log | grep -E "^\[INFO\]|^\[WARNING\]|error|Error|APK" | tail -n 200
+      - name: Registro de Buildozer (si falla)
+        if: failure()
+        run: tail -n 250 movil/buildozer.log || true
 
       - name: Verificar la APK
         run: |
@@ -80,3 +86,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: KaraokeInteligente-Android.apk
+          prerelease: ${{ contains(github.ref_name, '-') }}

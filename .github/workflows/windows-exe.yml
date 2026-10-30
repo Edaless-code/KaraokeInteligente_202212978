@@ -114,3 +114,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: KaraokeInteligente-Windows.zip
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: Karaoke Inteligente ${{ github.ref_name }}
+          body: |
+            **Karaoke Inteligente**, de Edgar Alessandro Chocon Oliva (carné 202212978).
+
+            | Archivo | Plataforma | Cómo usarlo |
+            |---|---|---|
+            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir y abrir `KaraokeInteligente.exe`. Incluye los modelos de voz (funciona sin internet). |
+            | `KaraokeInteligente-Android.apk` | Android 7.0 o superior | Abrir el archivo en el teléfono y permitir la instalación. |
+
+            Instrucciones completas en el [README](https://github.com/${{ github.repository }}#readme) y en `docs/`.
