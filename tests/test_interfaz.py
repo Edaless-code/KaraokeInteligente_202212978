@@ -132,3 +132,11 @@ def test_simulacion_automatica_sin_pantalla(tmp_path):
     assert proceso.returncode == 0, proceso.stderr
     assert "Canción identificada: Ghost of you" in proceso.stdout
     assert "línea 3" in proceso.stdout
+
+
+def test_las_canciones_siguen_ahi_al_volver_a_abrir(carpeta):
+    """Lo que se carga queda guardado en CANCIONES.db aunque se cierre el programa."""
+    ejecutar(carpeta, ["f", "t", "", "", "r", "s"])  # se cargan las canciones y se sale
+    salida = ejecutar(carpeta, ["w", "", "s"])        # se vuelve a abrir el programa
+    assert "Base de datos CANCIONES encontrada" in salida or "creada" not in salida
+    assert "Sound of You" in salida and "Ghost of you" in salida
