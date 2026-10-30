@@ -88,10 +88,14 @@ def leer_texto(ruta: str | Path) -> str:
     datos = Path(ruta).read_bytes()
     for codificacion in ("utf-8-sig", "cp1252", "latin-1"):
         try:
-            return datos.decode(codificacion)
+            texto = datos.decode(codificacion)
+            break
         except UnicodeDecodeError:
             continue
-    return datos.decode("utf-8", errors="replace")
+    else:
+        texto = datos.decode("utf-8", errors="replace")
+    # Saltos de línea de Windows (\r\n) y de Mac antiguo (\r) → \n.
+    return texto.replace("\r\n", "\n").replace("\r", "\n")
 
 
 # Palabras muy comunes de cada idioma para detectar en qué idioma está la letra.

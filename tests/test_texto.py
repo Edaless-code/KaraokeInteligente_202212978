@@ -80,5 +80,6 @@ def test_leer_texto_codificaciones(tmp_path):
     (tmp_path / "utf8.txt").write_text(texto, encoding="utf-8")
     (tmp_path / "bom.txt").write_text(texto, encoding="utf-8-sig")
     (tmp_path / "ansi.txt").write_bytes(texto.encode("cp1252"))
-    for nombre in ("utf8.txt", "bom.txt", "ansi.txt"):
+    (tmp_path / "crlf.txt").write_bytes(texto.replace("\n", "\r\n").encode("utf-8"))
+    for nombre in ("utf8.txt", "bom.txt", "ansi.txt", "crlf.txt"):
         assert leer_texto(tmp_path / nombre) == texto
