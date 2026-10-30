@@ -63,6 +63,15 @@ KaraokeInteligente\
 
 Requisitos: Windows 10 u 11 de 64 bits, 4 GB de RAM y unos 700 MB de disco. El micrófono solo se necesita para el modo automático en vivo.
 
+### Versión de escritorio con interfaz gráfica *(agregada)*
+
+En la misma carpeta está **`KaraokeEscritorio.exe`**. Usa la misma base de datos, las mismas pistas y los mismos modelos de voz que la versión de consola: lo que se agrega en una aparece en la otra.
+
+- **Diseño adaptable:** con la ventana ancha, la navegación está en una **barra lateral** (Cantar, Biblioteca, Programa, Más); si se angosta la ventana, pasa a **pestañas abajo**, como en el teléfono. La letra del escenario crece con la pantalla.
+- **Isla de controles:** en el escenario, los controles flotan en una barra semitransparente.
+- **Reproducir con letra:** en *Biblioteca*, elija una canción con pista y toque **Reproducir con letra**. Controles: **−5 s**, **Voz** (100 → 75 → 50 → 25 %), **+5 s**, **Inicio** y **Pausa**. Tocar la letra también pausa; deslizar a los lados mueve 5 segundos.
+- El primer uso carga las canciones de ejemplo con sus pistas.
+
 ### Opción B: desde el código fuente (Python)
 
 1. Instale **Python 3.11 o 3.12** desde <https://www.python.org/downloads/> y marque la casilla *Add Python to PATH*.
@@ -94,6 +103,9 @@ La versión de Android es una **app con interfaz táctil**, no la consola. Tiene
 Requisitos: Android 7.0 o superior. Para el modo automático sin internet, el teléfono debe tener descargado el idioma en *Ajustes → Sistema → Idiomas → Reconocimiento de voz sin conexión*. El nombre exacto del menú cambia según la marca.
 
 ### Uso de la app
+
+> La app se adapta al tamaño de cada pantalla: en teléfonos usa pestañas abajo y en tabletas horizontales (o pantallas anchas) una barra lateral. En *Biblioteca*, las canciones de ejemplo traen su pista: **Reproducir con letra** las toca con la letra a tiempo (en el teléfono, sin el control de voz del artista).
+
 
 La app tiene cuatro pestañas abajo:
 

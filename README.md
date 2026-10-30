@@ -6,6 +6,10 @@ Muestra la letra de las canciones **línea por línea, al ritmo del cantante**, 
 
 - **Modo manual:** escribes 2 o 3 palabras que escuchas; el programa identifica la canción y la línea, y avanzas con un toque o con la tecla **c**.
 - **Modo automático:** una inteligencia artificial escucha al cantante, reconoce la canción y avanza la letra sola. Se pausa cuando nadie canta y aprende canciones nuevas.
+- **Reproducir con letra:** la pista suena y la letra cambia sola, cada línea medio segundo **antes** de cantarse. Se puede bajar la **voz del artista** al 75, 50 o 25 %.
+- **Agregar desde MP3:** la IA escribe la letra de una pista (≈90 % de acierto) o, si das tu letra, solo calcula sus tiempos (100 %).
+
+Tres versiones: **consola** (Windows, la de la entrega), **escritorio con interfaz gráfica** (Windows) y **Android**. La interfaz se adapta a cada pantalla: teléfono, tableta o computadora.
 
 ---
 
@@ -26,13 +30,16 @@ No hace falta instalar Python ni nada más.
 
 1. Descarga **`KaraokeInteligente-Windows.zip`** desde [Releases](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases).
 2. Clic derecho sobre el ZIP → **Extraer todo…** (por ejemplo, en `C:\KaraokeInteligente`).
-3. Abre la carpeta y haz doble clic en **`KaraokeInteligente.exe`**.
+3. Abre la carpeta. Hay dos programas, que comparten las mismas canciones:
+   - **`KaraokeInteligente.exe`**: versión de **consola** (la que pide el enunciado).
+   - **`KaraokeEscritorio.exe`**: versión con **interfaz gráfica** (barra lateral, isla de controles, letra grande).
    - Si aparece *"Windows protegió su PC"*: **Más información → Ejecutar de todas formas**. Aparece porque el programa no está firmado digitalmente.
-4. En el menú:
+4. En la consola:
    - **`f` → `t` → Enter → Enter** carga las canciones de ejemplo.
-   - **`m`** abre el modo manual y **`a`** el automático.
+   - **`m`** abre el modo manual, **`a`** el automático y **`r`** reproduce una canción con su letra.
+5. En la versión de escritorio las canciones de ejemplo ya vienen cargadas: **Biblioteca → Sound of You → Reproducir con letra**.
 
-Requisitos: Windows 10 u 11 de 64 bits, unos 700 MB libres y un micrófono para el modo automático en vivo. Los modelos de voz ya vienen incluidos, así que funciona **sin internet**.
+Requisitos: Windows 10 u 11 de 64 bits, unos 1.5 GB libres y un micrófono para el modo automático en vivo. Los modelos de voz ya vienen incluidos, así que funciona **sin internet**.
 
 > **Probar el modo automático sin cantar:** `a` → `a` (archivo) → Enter → Enter → `s`. Reproduce *Sound of You* por las bocinas mientras la letra avanza sola.
 
