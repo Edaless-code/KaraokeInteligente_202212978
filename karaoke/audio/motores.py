@@ -216,15 +216,18 @@ class MotorWhisper(Motor):
             self.idioma = idioma
 
     def _transcribir(self, muestras: np.ndarray, segundo: float) -> None:
-        segmentos, _ = self.modelo.transcribe(
-            muestras, language=self.idioma, beam_size=1, vad_filter=self.filtro_vad,
+        # Con idioma "auto" Whisper detecta el idioma de cada ventana (canciones
+        # bilingües, por ejemplo inglés con versos en español).
+        idioma = None if self.idioma in (None, "", "auto") else self.idioma
+        segmentos, informacion = self.modelo.transcribe(
+            muestras, language=idioma, beam_size=1, vad_filter=self.filtro_vad,
             condition_on_previous_text=False, initial_prompt=self.sugerencia,
         )
         for segmento in segmentos:
             texto = segmento.text.strip()
             if texto:
                 self._resultados.put(Transcripcion(
-                    "final", texto, "libre", self.idioma,
+                    "final", texto, "libre", informacion.language or self.idioma,
                     float(math.exp(segmento.avg_logprob)), segundo,
                 ))
 

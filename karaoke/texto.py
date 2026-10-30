@@ -143,7 +143,7 @@ def vocabulario(lineas: list[str], idioma: str = "es") -> set[str]:
     no "cancion")."""
     resultado: set[str] = set()
     for linea in lineas:
-        for palabra in _NO_LETRA.sub(" ", linea.lower()).split():
+        for palabra in _NO_LETRA.sub(" ", linea.lower().replace("’", "'")).split():
             palabra = palabra.strip("'")
             if not palabra or palabra.isdigit():
                 continue

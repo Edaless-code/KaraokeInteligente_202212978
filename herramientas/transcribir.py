@@ -33,7 +33,8 @@ from karaoke.texto import vocabulario  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("audio")
-    parser.add_argument("--idioma", default="es", choices=["es", "en"])
+    parser.add_argument("--idioma", default="es", choices=["es", "en", "auto"],
+                        help="auto: Whisper detecta el idioma (canciones bilingües)")
     parser.add_argument("--canciones", default="ejemplos/canciones.txt",
                         help="archivo de canciones contra el que se busca")
     parser.add_argument("--carpeta", default=".", help="carpeta con karaoke.ini y modelo/")

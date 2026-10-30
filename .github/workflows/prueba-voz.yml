@@ -16,16 +16,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - nombre: "Vosk libre sin limpieza"
-            opciones: "--motor vosk --sin-limpieza"
-          - nombre: "Vosk libre aislando la voz"
-            opciones: "--motor vosk --sin-limpieza --aislar-voz"
-          - nombre: "Vosk restringido aislando la voz"
-            opciones: "--motor vosk --sin-limpieza --aislar-voz --restringido"
-          - nombre: "Whisper base aislando la voz"
-            opciones: "--motor whisper --sin-limpieza --aislar-voz"
-          - nombre: "Whisper small aislando la voz"
-            opciones: "--motor whisper --modelo-whisper small --sin-limpieza --aislar-voz"
+          - nombre: "Sound of You · Vosk restringido"
+            audio: ejemplos/Sound_of_You.mp3
+            opciones: "--idioma en --motor vosk --sin-limpieza --aislar-voz --restringido"
+          - nombre: "Sound of You · Whisper base"
+            audio: ejemplos/Sound_of_You.mp3
+            opciones: "--idioma en --motor whisper --sin-limpieza --aislar-voz"
+          - nombre: "Ghost of you · Vosk restringido"
+            audio: ejemplos/Ghost_of_you_Remastered.mp3
+            opciones: "--idioma en --motor vosk --sin-limpieza --aislar-voz --restringido"
+          - nombre: "Ghost of you · Whisper base inglés"
+            audio: ejemplos/Ghost_of_you_Remastered.mp3
+            opciones: "--idioma en --motor whisper --sin-limpieza --aislar-voz"
+          - nombre: "Ghost of you · Whisper base idioma automático"
+            audio: ejemplos/Ghost_of_you_Remastered.mp3
+            opciones: "--idioma auto --motor whisper --sin-limpieza --aislar-voz"
     name: ${{ matrix.nombre }}
     steps:
       - uses: actions/checkout@v4
@@ -50,5 +55,5 @@ jobs:
               unzip -q "$m.zip" -d modelo && rm "$m.zip"
             fi
           done
-      - name: Transcribir Sound of You
-        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en ${{ matrix.opciones }}
+      - name: Transcribir
+        run: python herramientas/transcribir.py ${{ matrix.audio }} ${{ matrix.opciones }}
