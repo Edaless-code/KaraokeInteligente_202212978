@@ -456,7 +456,7 @@ class BaseDatos:
             " lineas_mostradas, completada) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (id_sesion, codigo, nombre, modo, inicio, _ahora(), lineas_mostradas, int(completada)),
         )
-        if codigo is not None:
+        if codigo is not None and completada:
             self.conexion.execute(
                 "UPDATE NOMBRES SET veces_cantada = veces_cantada + 1 WHERE codigo = ?", (codigo,)
             )

@@ -131,7 +131,9 @@ class SesionKaraoke:
             curso.lineas_mostradas,
             completada,
         )
-        if curso.cancion.codigo is not None:
+        # Solo cuenta para el programa si se cantó completa (si se abandonó con
+        # "b" sigue pendiente).
+        if completada and curso.cancion.codigo is not None:
             self.programa.marcar_cantada(curso.cancion.codigo)
         self.cantadas.append(
             Interpretacion(curso.cancion.codigo, curso.cancion.nombre, completada, curso.lineas_mostradas)
