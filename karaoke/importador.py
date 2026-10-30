@@ -20,7 +20,9 @@ Formato aceptado (se detecta automáticamente):
        # Cielito lindo
        De la Sierra Morena...
 
-Las líneas que empiezan con ``//`` son comentarios y se ignoran.
+Las líneas que empiezan con ``//`` son comentarios y se ignoran, igual que
+las etiquetas de sección que no se cantan ("Coro", "Chorus (Repeat 2x)",
+"[Verso 2]", "(Puente)").
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from pathlib import Path
 
 from .config import Config
 from .db import BaseDatos, CancionDuplicada
-from .texto import ajustar_linea, leer_texto
+from .texto import ajustar_linea, es_etiqueta, leer_texto
 
 _ENCABEZADO = re.compile(r"^\s*(?:#+|nombre\s*:)\s*(.*)$", re.IGNORECASE)
 
@@ -46,7 +48,7 @@ class ResultadoImportacion:
 def analizar_texto(texto: str) -> list[tuple[str, list[str]]]:
     """Convierte el contenido del archivo en una lista (nombre, líneas)."""
     renglones = [r.rstrip() for r in texto.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-    renglones = [r for r in renglones if not r.lstrip().startswith("//")]
+    renglones = [r for r in renglones if not r.lstrip().startswith("//") and not es_etiqueta(r)]
     explicito = any(_ENCABEZADO.match(r) for r in renglones)
     canciones: list[tuple[str, list[str]]] = []
 

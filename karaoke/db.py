@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .texto import normalizar, semejanza
+from .texto import detectar_idioma, normalizar, semejanza
 
 VERSION_ESQUEMA = 1
 
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS NOMBRES (
     nombre_cancion      TEXT    NOT NULL,
     nombre_normalizado  TEXT    NOT NULL UNIQUE,
     artista             TEXT    NOT NULL DEFAULT '',
+    idioma              TEXT    NOT NULL DEFAULT 'es',
     origen              TEXT    NOT NULL DEFAULT 'manual',
     fecha_registro      TEXT    NOT NULL,
     veces_cantada       INTEGER NOT NULL DEFAULT 0
@@ -106,6 +107,7 @@ class Cancion:
     artista: str = ""
     origen: str = ""
     veces_cantada: int = 0
+    idioma: str = "es"
 
 
 @dataclass
@@ -181,7 +183,12 @@ class BaseDatos:
         return fila[0] if fila else None
 
     def agregar_cancion(
-        self, nombre: str, lineas: list[str], origen: str = "manual", artista: str = ""
+        self,
+        nombre: str,
+        lineas: list[str],
+        origen: str = "manual",
+        artista: str = "",
+        idioma: str | None = None,
     ) -> int:
         nombre = nombre.strip()
         if not nombre:
@@ -192,9 +199,9 @@ class BaseDatos:
         if self.existe_nombre(nombre) is not None:
             raise CancionDuplicada(f"Ya existe una canción llamada «{nombre}».")
         cur = self.conexion.execute(
-            "INSERT INTO NOMBRES(nombre_cancion, nombre_normalizado, artista, origen, fecha_registro)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (nombre, normalizar(nombre), artista.strip(), origen, _ahora()),
+            "INSERT INTO NOMBRES(nombre_cancion, nombre_normalizado, artista, idioma, origen,"
+            " fecha_registro) VALUES (?, ?, ?, ?, ?, ?)",
+            (nombre, normalizar(nombre), artista.strip(), idioma or detectar_idioma(lineas), origen, _ahora()),
         )
         codigo = cur.lastrowid
         self._insertar_lineas(codigo, lineas)
@@ -209,7 +216,8 @@ class BaseDatos:
 
     def obtener_cancion(self, codigo: int) -> Cancion | None:
         fila = self.conexion.execute(
-            "SELECT codigo, nombre_cancion, artista, origen, veces_cantada FROM NOMBRES WHERE codigo = ?",
+            "SELECT codigo, nombre_cancion, artista, origen, veces_cantada, idioma FROM NOMBRES"
+            " WHERE codigo = ?",
             (codigo,),
         ).fetchone()
         if not fila:
@@ -220,7 +228,7 @@ class BaseDatos:
                 "SELECT linea FROM LETRAS WHERE codigo = ? ORDER BY numero_linea", (codigo,)
             )
         ]
-        return Cancion(fila[0], fila[1], lineas, fila[2], fila[3], fila[4])
+        return Cancion(fila[0], fila[1], lineas, fila[2], fila[3], fila[4], fila[5])
 
     def listar_canciones(self, desde: int = 0, cantidad: int = -1) -> list[tuple[int, str, int]]:
         """Devuelve (código, nombre, número de líneas) ordenado por código."""
@@ -236,8 +244,8 @@ class BaseDatos:
 
     def todas_las_letras(self) -> dict[int, Cancion]:
         canciones: dict[int, Cancion] = {}
-        for r in self.conexion.execute("SELECT codigo, nombre_cancion FROM NOMBRES"):
-            canciones[r[0]] = Cancion(r[0], r[1])
+        for r in self.conexion.execute("SELECT codigo, nombre_cancion, idioma FROM NOMBRES"):
+            canciones[r[0]] = Cancion(r[0], r[1], idioma=r[2])
         for r in self.conexion.execute(
             "SELECT codigo, linea FROM LETRAS ORDER BY codigo, numero_linea"
         ):
@@ -282,6 +290,9 @@ class BaseDatos:
             raise ValueError("La canción debe tener al menos una línea.")
         self.conexion.execute("DELETE FROM LETRAS WHERE codigo = ?", (codigo,))
         self._insertar_lineas(codigo, lineas)
+        self.conexion.execute(
+            "UPDATE NOMBRES SET idioma = ? WHERE codigo = ?", (detectar_idioma(lineas), codigo)
+        )
         self._cambio()
 
     def renombrar(self, codigo: int, nombre: str) -> None:

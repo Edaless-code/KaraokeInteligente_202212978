@@ -92,3 +92,34 @@ def leer_texto(ruta: str | Path) -> str:
         except UnicodeDecodeError:
             continue
     return datos.decode("utf-8", errors="replace")
+
+
+# Palabras muy comunes de cada idioma para detectar en qué idioma está la letra.
+_FRECUENTES = {
+    "es": set("el la los las de que y en un una por con no se mi tu me te lo le es al del yo pero mas".split()),
+    "en": set("the and you i to a of in my is it that me your be for on with all love dont im".split()),
+}
+
+# Renglones que solo son etiquetas de una sección de la canción y no se cantan.
+_ETIQUETA = re.compile(
+    r"^\s*(?:\[.*\]|\(.*\)|(?:coro|chorus|estribillo|verso|verse|puente|bridge|intro|outro|pre-?coro|pre-?chorus)"
+    r"\s*\d*\s*(?:\(.*\))?\s*:?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def es_etiqueta(renglon: str) -> bool:
+    """``True`` si el renglón es una etiqueta como "Coro", "[Verso 2]" o
+    "Chorus (Repeat 2x)"."""
+    return bool(_ETIQUETA.match(renglon))
+
+
+def detectar_idioma(lineas: list[str]) -> str:
+    """Devuelve "es" o "en" según las palabras frecuentes de la letra."""
+    conteo = {idioma: 0 for idioma in _FRECUENTES}
+    for linea in lineas:
+        for palabra in palabras(linea):
+            for idioma, frecuentes in _FRECUENTES.items():
+                if palabra in frecuentes:
+                    conteo[idioma] += 1
+    return max(conteo, key=lambda i: (conteo[i], i == "es"))
