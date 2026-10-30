@@ -52,8 +52,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
     "audio": {
         # Motor de transcripción: vosk | whisper | simulado
         "motor": "vosk",
-        # Carpeta del modelo de Vosk (relativa a la carpeta del programa).
-        "modelo_vosk": "modelo/vosk-model-small-es-0.42",
+        # Carpetas de los modelos de Vosk de cada idioma (relativas a la
+        # carpeta del programa). Si faltan, el programa ofrece descargarlos.
+        "modelo_vosk_es": "modelo/vosk-model-small-es-0.42",
+        "modelo_vosk_en": "modelo/vosk-model-small-en-us-0.15",
         # Modelo de faster-whisper si se usa el motor whisper.
         "modelo_whisper": "base",
         "idioma": "es",

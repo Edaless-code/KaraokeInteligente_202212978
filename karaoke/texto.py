@@ -21,7 +21,7 @@ def normalizar(texto: str) -> str:
     texto = texto.lower().replace("ñ", "\x00")
     texto = unicodedata.normalize("NFKD", texto)
     texto = "".join(c for c in texto if not unicodedata.combining(c))
-    texto = texto.replace("\x00", "ñ")
+    texto = texto.replace("\x00", "ñ").replace("'", "").replace("’", "")
     texto = _NO_ALFANUMERICO.sub(" ", texto)
     return _ESPACIOS.sub(" ", texto).strip()
 
@@ -123,3 +123,31 @@ def detectar_idioma(lineas: list[str]) -> str:
                 if palabra in frecuentes:
                     conteo[idioma] += 1
     return max(conteo, key=lambda i: (conteo[i], i == "es"))
+
+
+_NO_LETRA = re.compile(r"[^\w' ]+")
+
+# Contracciones del inglés que en las letras se suelen escribir sin apóstrofo;
+# el modelo de voz las conoce con apóstrofo.
+_CONTRACCIONES = {
+    "dont": "don't", "cant": "can't", "wont": "won't", "im": "i'm", "ive": "i've",
+    "youre": "you're", "isnt": "isn't", "doesnt": "doesn't", "didnt": "didn't",
+    "thats": "that's", "whats": "what's", "lets": "let's", "aint": "ain't",
+    "youve": "you've", "ill": "i'll", "id": "i'd", "theyre": "they're", "wasnt": "wasn't",
+}
+
+
+def vocabulario(lineas: list[str], idioma: str = "es") -> set[str]:
+    """Palabras de la letra tal como las conoce el modelo de voz: en
+    minúsculas, sin signos y CONSERVANDO las tildes (Vosk reconoce "canción",
+    no "cancion")."""
+    resultado: set[str] = set()
+    for linea in lineas:
+        for palabra in _NO_LETRA.sub(" ", linea.lower()).split():
+            palabra = palabra.strip("'")
+            if not palabra or palabra.isdigit():
+                continue
+            resultado.add(palabra)
+            if idioma == "en" and palabra in _CONTRACCIONES:
+                resultado.add(_CONTRACCIONES[palabra])
+    return resultado
