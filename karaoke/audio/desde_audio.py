@@ -42,6 +42,16 @@ class Borrador:
     motor: str
     # Segundo en que empieza cada línea en la pista (None si no se sabe).
     tiempos: list[float | None] = field(default_factory=list)
+    # Todo lo que oyó la IA con su tiempo: sirve para sincronizar otra letra.
+    palabras: list[Palabra] = field(default_factory=list)
+
+    def usar_letra(self, lineas: list[str]) -> None:
+        """Reemplaza el borrador por la letra real (la del autor) y calcula
+        en qué segundo empieza cada una de sus líneas."""
+        self.lineas = list(lineas)
+        self.tiempos = tiempos_para(lineas, self.palabras, self.duracion)
+        if "letra del autor" not in self.motor:
+            self.motor += " + letra del autor"
 
 
 @dataclass
@@ -233,6 +243,7 @@ def crear_borrador(ruta: Path, config: Config, idioma: str | None = None,
     if aislar is None:
         aislar = config.booleano("audio", "aislar_voz_letras")
     muestras = leer_voz(ruta, aislar)
+    palabras: list[Palabra] = []
     if whisper_disponible():
         palabras, idioma_final, motor = _con_whisper(muestras, config, idioma, progreso, modelo)
         frases = frases_por_pausas(palabras, config.decimal("audio", "pausa_entre_lineas"),
@@ -245,8 +256,47 @@ def crear_borrador(ruta: Path, config: Config, idioma: str | None = None,
     lineas = [l for l, _ in pares]
     if idioma_final not in ("es", "en") and lineas:
         idioma_final = detectar_idioma(lineas)
-    return Borrador(ruta, nombre_desde_archivo(ruta), lineas, idioma_final,
-                    len(muestras) / FRECUENCIA, motor, [t for _, t in pares])
+    duracion = len(muestras) / FRECUENCIA
+    tiempos = [t for _, t in pares]
+    if palabras and any(t is None for t in tiempos):
+        # las partes de una línea dividida no conocen su inicio: se alinean
+        tiempos = tiempos_para(lineas, palabras, duracion)
+    return Borrador(ruta, nombre_desde_archivo(ruta), lineas, idioma_final, duracion, motor,
+                    tiempos, palabras)
+
+
+def tiempos_para(lineas: list[str], palabras: list[Palabra], duracion: float) -> list[float]:
+    """Segundo en que empieza cada línea de una letra conocida."""
+    from ..alineacion import PalabraConTiempo, tiempos_de_lineas
+
+    return tiempos_de_lineas(lineas, [PalabraConTiempo(p.texto, p.inicio, p.fin) for p in palabras], duracion)
+
+
+def letra_junto_al_audio(ruta: Path) -> list[str] | None:
+    """Si junto al audio hay un .txt con el mismo nombre ("Mi canción.mp3" y
+    "Mi canción.txt"), es la letra escrita por el autor: una línea por renglón;
+    se ignoran las etiquetas ([Coro], (Verso 2)), los comentarios // y un
+    encabezado "# Nombre"."""
+    from ..texto import es_etiqueta, leer_texto
+
+    texto = ruta.with_suffix(".txt")
+    if not texto.is_file():
+        return None
+    lineas = [r.strip() for r in leer_texto(texto).splitlines()
+              if r.strip() and not es_etiqueta(r) and not r.lstrip().startswith(("//", "#"))]
+    return lineas or None
+
+
+def sincronizar(ruta: Path, config: Config, lineas: list[str], progreso: Progreso | None = None,
+                idioma: str | None = None) -> list[float]:
+    """Tiempos de una letra ya conocida con su pista (la IA solo escucha cuándo)."""
+    from .proceso import whisper_disponible
+
+    if not whisper_disponible():
+        raise ErrorMotor("Para sincronizar la letra hace falta Whisper (pip install faster-whisper).")
+    muestras = leer_voz(ruta, config.booleano("audio", "aislar_voz_letras"))
+    palabras, _, _ = _con_whisper(muestras, config, idioma, progreso)
+    return tiempos_para(lineas, palabras, len(muestras) / FRECUENCIA)
 
 
 def guardar_pista(ruta: Path, config: Config, codigo: int, nombre: str) -> str:

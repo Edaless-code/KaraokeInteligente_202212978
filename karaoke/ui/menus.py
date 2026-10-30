@@ -34,6 +34,7 @@ SECCIONES_MENU = [
     ("CANTAR", [
         ("m", "Modo manual", "buscar con 2 o 3 palabras y avanzar con la tecla c"),
         ("a", "Modo automático", "la inteligencia artificial escucha y sigue al cantante"),
+        ("r", "Reproducir con letra", "la pista suena y la letra va a tiempo"),
     ]),
     ("CANCIONES", [
         ("w", "Ver canciones", "códigos y nombres, de 10 en 10"),
@@ -112,6 +113,7 @@ class Aplicacion:
         acciones = {
             "m": self.modo_manual,
             "a": self.modo_automatico,
+            "r": self.reproducir,
             "f": self.menu_alimentacion,
             "p": self.menu_programa,
             "w": self.ver_canciones,
@@ -151,6 +153,11 @@ class Aplicacion:
             for tecla, texto, explicacion in opciones:
                 print(f"    {color(tecla, 'negrita', 'cian')}   {texto:<24}" + color(explicacion, "tenue"))
         print()
+
+    def reproducir(self) -> None:
+        from .reproducir import ReproducirConLetra
+
+        ReproducirConLetra(self).ejecutar()
 
     # Los modos de canto se implementan en sus propios módulos.
     def modo_manual(self) -> None:

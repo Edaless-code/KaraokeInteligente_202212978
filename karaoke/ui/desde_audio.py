@@ -3,8 +3,12 @@
 Se elige un archivo o una carpeta completa; cada pista se transcribe con la IA
 y se muestra el borrador de la letra para revisarlo antes de guardarlo:
 
-    g guardar · e editar la letra · n cambiar el nombre ·
+    g guardar · e editar la letra · l usar mi letra · n cambiar el nombre ·
     v dejar para revisar después (f → v) · d descartar
+
+Si el autor tiene la letra escrita (un .txt con el mismo nombre junto al
+audio, o con la opción l) se usa esa letra, exacta, y la IA solo calcula en
+qué segundo empieza cada línea para mostrarla a tiempo.
 
 Si la canción ya existe (por ejemplo, se cargó desde canciones.txt) se ofrece
 solo asociarle la pista, sin tocar su letra.
@@ -94,6 +98,11 @@ class AgregarDesdeAudio:
             self.teclado.pausa()
             return None
         print()
+        propia = modulo.letra_junto_al_audio(archivo)
+        if propia:
+            borrador.usar_letra(propia)
+            consola.exito(f"  Se usó tu letra de {archivo.with_suffix('.txt').name}; la IA puso los tiempos.")
+            self.teclado.pausa()
         if not borrador.lineas:
             consola.aviso("  La IA no reconoció letra en esta pista (¿es instrumental?).")
             self.teclado.pausa()
@@ -106,10 +115,14 @@ class AgregarDesdeAudio:
                        f"{_duracion(borrador.duracion)} · {borrador.idioma} · {borrador.motor}")
         print(color("  Revise la letra: la IA puede equivocarse en algunas palabras.", "tenue"))
         print()
+        tiempos = borrador.tiempos if len(borrador.tiempos) == len(borrador.lineas) else []
         for i, linea in enumerate(borrador.lineas, 1):
-            print(f"  {color(f'{i:>3}', 'tenue')}  {linea}")
+            marca = ""
+            if tiempos and tiempos[i - 1] is not None:
+                marca = f"{int(tiempos[i - 1] // 60)}:{tiempos[i - 1] % 60:04.1f}  "
+            print(f"  {color(f'{i:>3}', 'tenue')}  {color(marca, 'tenue')}{linea}")
         print()
-        print(color("  g guardar · e editar la letra · n cambiar el nombre · "
+        print(color("  g guardar · e editar la letra · l usar mi letra (exacta) · n cambiar el nombre · "
                     "v revisar después (f → v) · d descartar", "cian"))
 
     def _revisar(self, modulo, borrador: Borrador) -> bool:
@@ -123,7 +136,12 @@ class AgregarDesdeAudio:
             elif orden == "e":
                 editado = self.app.editar_lineas(borrador.nombre, list(borrador.lineas), permitir_renombrar=True)
                 if editado is not None:
-                    borrador.nombre, borrador.lineas = editado
+                    borrador.nombre, lineas = editado
+                    if lineas != borrador.lineas and borrador.palabras:
+                        borrador.usar_letra(lineas)  # los tiempos se recalculan con la letra corregida
+                    borrador.lineas = lineas
+            elif orden == "l":
+                self._usar_mi_letra(borrador)
             elif orden == "n":
                 nuevo = self.app.preguntar(f"  Nombre de la canción [{borrador.nombre}]: ")
                 borrador.nombre = nuevo or borrador.nombre
@@ -138,11 +156,33 @@ class AgregarDesdeAudio:
                 if self.teclado.confirmar("  ¿Descartar este borrador?"):
                     return False
 
+    def _usar_mi_letra(self, borrador: Borrador) -> None:
+        print(color("  Escriba la ruta de un .txt con la letra, o Enter para escribirla aquí.", "tenue"))
+        texto = self.app.preguntar("  Archivo de la letra: ").strip().strip('"')
+        if texto:
+            from ..texto import es_etiqueta, leer_texto
+
+            try:
+                lineas = [r.strip() for r in leer_texto(texto).splitlines()
+                          if r.strip() and not es_etiqueta(r) and not r.lstrip().startswith(("//", "#"))]
+            except (OSError, ValueError) as ex:
+                consola.error(f"  No se pudo leer: {ex}")
+                self.teclado.pausa()
+                return
+        else:
+            lineas = self.app.leer_lineas()
+        if lineas:
+            borrador.usar_letra(lineas)
+
     def _guardar(self, modulo, borrador: Borrador) -> bool:
         existente = self.bd.existe_nombre(borrador.nombre)
         if existente is not None:
             consola.aviso(f"  Ya existe la canción [{existente}] «{borrador.nombre}».")
-            if self.teclado.confirmar("  ¿Asociarle esta pista sin cambiar su letra?"):
+            if self.teclado.confirmar("  ¿Asociarle esta pista y sincronizar su letra (sin cambiarla)?"):
+                cancion = self.bd.obtener_cancion(existente)
+                if cancion and borrador.palabras:
+                    self.bd.guardar_tiempos(existente, modulo.tiempos_para(
+                        cancion.lineas, borrador.palabras, borrador.duracion))
                 return self._asociar_pista(modulo, borrador, existente)
             consola.aviso("  Cambie el nombre con (n) para guardarla como otra canción.")
             self.teclado.pausa()
@@ -158,6 +198,8 @@ class AgregarDesdeAudio:
             consola.error(f"  {ex}")
             self.teclado.pausa()
             return False
+        if len(borrador.tiempos) == len(borrador.lineas) and None not in borrador.tiempos:
+            self.bd.guardar_tiempos(codigo, borrador.tiempos)
         self._asociar_pista(modulo, borrador, codigo, avisar=False)
         consola.exito(f"  Guardada con el código {codigo} ({len(borrador.lineas)} líneas) y su pista de audio.")
         self.teclado.pausa()
