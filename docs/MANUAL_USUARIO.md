@@ -267,7 +267,7 @@ Es el karaoke "de toda la vida": la **pista suena** por las bocinas y la **letra
 |---|---|
 | **espacio** | Pausa / seguir |
 | **←** / **→** | Retroceder / adelantar 5 segundos |
-| **-** / **+** | **Bajar o subir la voz del artista** (de 25 en 25 %): al 0 % queda casi solo la música y se escucha mejor a quien canta |
+| **-** / **+** | **Bajar o subir la voz del artista**: 100, 75, 50 o 25 %. Con menos voz original se escucha mejor a quien canta; no se baja de 25 % para que no se oiga la reverberación como un susurro |
 | **f** | Terminar |
 
 > **Cómo se baja la voz del artista:** la voz principal casi siempre suena igual en los dos canales (está "en el centro"), y los instrumentos se reparten a los lados. El programa resta lo que es igual en ambos canales, solo en las frecuencias de la voz; el bajo, el bombo y los instrumentos de los lados se quedan. Puede quedar un eco leve de la reverberación. Si tiene la voz y la música por separado (por ejemplo, los *stems* que exporta Suno), el resultado es perfecto.

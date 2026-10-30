@@ -22,6 +22,11 @@ from .fuentes import ErrorAudio, _sounddevice, leer_archivo_audio
 
 FRECUENCIA = 44100
 BANDA_VOZ = (180.0, 5000.0)
+# Niveles de la voz del artista. No se baja de 25 %: un poco de la voz
+# original tapa la cola de reverberación (que no se puede quitar de una mezcla
+# terminada) y el resultado suena natural, sin "susurros" de fondo.
+NIVELES_VOZ = (1.0, 0.75, 0.5, 0.25)
+SUAVIZADO = 0.6  # memoria del filtro entre marcos (~25 ms): evita que "parpadee"
 
 
 def voz_del_centro(estereo: np.ndarray, frecuencia: int = FRECUENCIA, tamano: int = 2048) -> np.ndarray:
@@ -32,6 +37,10 @@ def voz_del_centro(estereo: np.ndarray, frecuencia: int = FRECUENCIA, tamano: in
     lado) y se toma esa fracción del centro (L+R)/2, solo en la banda de la
     voz. Así un instrumento abierto a un lado no se resta. Se procesa por
     bloques para no usar mucha memoria con canciones largas.
+
+    El filtro se suaviza entre frecuencias vecinas y en el tiempo: si cambia
+    de golpe de un marco a otro deja pequeños ruidos ("ruido musical") que se
+    oyen como un susurro donde estaba la voz.
     """
     salto = tamano // 4
     ventana = np.hanning(tamano).astype(np.float32)
@@ -44,25 +53,35 @@ def voz_del_centro(estereo: np.ndarray, frecuencia: int = FRECUENCIA, tamano: in
     senal = np.concatenate([relleno, estereo.astype(np.float32), relleno])
     salida = np.zeros(len(senal), dtype=np.float32)
     marcos = (len(senal) - tamano) // salto + 1
+    memoria = None  # filtro del marco anterior (continúa entre bloques)
     for bloque in range(0, marcos, 512):
         indices = np.arange(bloque, min(marcos, bloque + 512))[:, None] * salto + np.arange(tamano)
         izquierda = np.fft.rfft(senal[indices, 0] * ventana, axis=1)
         derecha = np.fft.rfft(senal[indices, 1] * ventana, axis=1)
         energia = np.abs(izquierda) ** 2 + np.abs(derecha) ** 2 + 1e-9
-        parecido = 2 * np.abs(izquierda * np.conj(derecha)) / energia
-        centro = 0.5 * (izquierda + derecha) * (parecido ** 2) * banda
+        parecido = (2 * np.abs(izquierda * np.conj(derecha)) / energia) ** 2
+        # vecinas en frecuencia
+        parecido[:, 1:-1] = (parecido[:, :-2] + 2 * parecido[:, 1:-1] + parecido[:, 2:]) / 4
+        # memoria en el tiempo
+        for k in range(len(parecido)):
+            if memoria is not None:
+                parecido[k] = SUAVIZADO * memoria + (1 - SUAVIZADO) * parecido[k]
+            memoria = parecido[k]
+        centro = 0.5 * (izquierda + derecha) * parecido * banda
         marcos_salida = np.fft.irfft(centro, n=tamano, axis=1).astype(np.float32) * ventana
         np.add.at(salida, indices, marcos_salida)
     salida /= 1.5  # suma de hann² con salto de 1/4
     return salida[tamano: tamano + total]
 
 
-def mezclar(estereo: np.ndarray, centro: np.ndarray, voz: float) -> np.ndarray:
-    """La pista con la voz del centro al ``voz`` (1 = original, 0 = sin voz)."""
-    quitar = (1.0 - min(1.0, max(0.0, voz)))
-    if quitar <= 0:
+def mezclar(estereo: np.ndarray, centro: np.ndarray, voz: float | np.ndarray) -> np.ndarray:
+    """La pista con la voz del centro al ``voz`` (1 = original, 0 = sin voz).
+    ``voz`` puede ser un arreglo (una rampa) para cambiar de nivel sin chasquidos."""
+    quitar = 1.0 - np.clip(voz, 0.0, 1.0)
+    if np.all(quitar <= 0):
         return estereo
-    return estereo - quitar * centro[:, None]
+    quitar = np.asarray(quitar, dtype=np.float32)
+    return estereo - (quitar[:, None] if quitar.ndim else quitar) * centro[:, None]
 
 
 class Reproductor:
@@ -73,6 +92,7 @@ class Reproductor:
         self.duracion = len(self.pista) / frecuencia
         self._centro: np.ndarray | None = None
         self.voz = 1.0
+        self._voz_sonando = 1.0  # para pasar suavemente de un nivel a otro
         self.posicion = 0
         self.pausado = False
         self.terminada = False
@@ -99,8 +119,10 @@ class Reproductor:
                 return
             inicio, fin = self.posicion, self.posicion + cuadros
             trozo = self.pista[inicio:fin]
-            if self.voz < 1.0 and self._centro is not None and len(trozo):
-                trozo = mezclar(trozo, self._centro[inicio:fin], self.voz)
+            if self._centro is not None and len(trozo) and (self.voz < 1.0 or self._voz_sonando < 1.0):
+                rampa = np.linspace(self._voz_sonando, self.voz, len(trozo), dtype=np.float32)
+                trozo = mezclar(trozo, self._centro[inicio:fin], rampa)
+                self._voz_sonando = self.voz
             salida[: len(trozo)] = trozo
             salida[len(trozo):] = 0
             self.posicion = fin
@@ -139,11 +161,21 @@ class Reproductor:
     def voz_lista(self) -> bool:
         return self._centro is not None
 
+    def bajar_voz(self) -> None:
+        menores = [n for n in NIVELES_VOZ if n < self.voz - 1e-6]
+        if menores:
+            self.ajustar_voz(max(menores))
+
+    def subir_voz(self) -> None:
+        mayores = [n for n in NIVELES_VOZ if n > self.voz + 1e-6]
+        if mayores:
+            self.ajustar_voz(min(mayores))
+
     def ajustar_voz(self, voz: float) -> None:
         """0 = sin la voz del artista, 1 = original (se aplica en cuanto la
         estimación de la voz esté lista)."""
         with self._candado:
-            self.voz = min(1.0, max(0.0, voz))
+            self.voz = min(1.0, max(min(NIVELES_VOZ), voz))
 
     def detener(self) -> None:
         if self._flujo is not None:

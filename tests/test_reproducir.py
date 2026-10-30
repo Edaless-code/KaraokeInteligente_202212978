@@ -14,9 +14,9 @@ def test_bajar_la_voz_del_centro_conserva_los_lados():
     centro = voz_del_centro(estereo, fs)
     sin_voz = mezclar(estereo, centro, 0.0)
     # la voz casi desaparece del canal derecho (donde solo estaba la voz)...
-    assert np.abs(sin_voz[2000:-2000, 1]).max() < 0.2 * np.abs(voz).max()
+    assert np.abs(sin_voz[4000:-4000, 1]).max() < 0.2 * np.abs(voz).max()
     # ...la guitarra de la izquierda se queda casi intacta...
-    resto = sin_voz[2000:-2000, 0] - guitarra[2000:-2000]
+    resto = sin_voz[4000:-4000, 0] - guitarra[4000:-4000]
     assert np.abs(resto).max() < 0.25 * np.abs(guitarra).max()
     # ...y la mezcla original no cambia con la voz al 100 %
     assert np.array_equal(mezclar(estereo, centro, 1.0), estereo)
@@ -64,3 +64,25 @@ def test_los_ejemplos_quedan_vinculados(tmp_path):
     ReproducirConLetra(Aplicacion(config, bd, teclado=object())).vincular_ejemplos()
     assert [(n, a) for _, n, a in bd.listar_pistas()] == [("Ghost of you", "ejemplos/Ghost_of_you_Remastered.mp3")]
     bd.cerrar()
+
+
+def test_niveles_de_voz_y_cambio_suave():
+    from karaoke.audio.reproductor import NIVELES_VOZ, Reproductor
+
+    r = Reproductor.__new__(Reproductor)
+    import threading
+    r._candado, r.voz = threading.Lock(), 1.0
+    vistos = []
+    for _ in range(6):
+        r.bajar_voz()
+        vistos.append(r.voz)
+    assert vistos == [0.75, 0.5, 0.25, 0.25, 0.25, 0.25]  # nunca baja de 25 %
+    r.subir_voz()
+    assert r.voz == 0.5
+    assert NIVELES_VOZ == (1.0, 0.75, 0.5, 0.25)
+    # la rampa evita saltos: el primer valor es el nivel anterior, el último el nuevo
+    fs = 1000
+    estereo = np.ones((fs, 2), np.float32)
+    centro = np.ones(fs, np.float32)
+    salida = mezclar(estereo, centro, np.linspace(1.0, 0.5, fs, dtype=np.float32))
+    assert abs(salida[0, 0] - 1.0) < 1e-6 and abs(salida[-1, 0] - 0.5) < 1e-6

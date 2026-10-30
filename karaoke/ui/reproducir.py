@@ -8,7 +8,8 @@ regresiva hasta la primera línea.
 La primera vez que se reproduce una canción sin tiempos, la IA escucha la
 pista una sola vez y sincroniza la letra (se guarda en la base de datos).
 
-Teclas: espacio pausa · ← → 5 segundos · - + voz del artista · f terminar
+Teclas: espacio pausa · ← → 5 segundos · - + voz del artista (100, 75, 50 o
+25 %) · f terminar
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from .pantalla import VistaKaraoke, componer
 if TYPE_CHECKING:
     from .menus import Aplicacion
 
-AYUDA = "espacio pausa · ← → 5 segundos · - + voz del artista · f terminar"
+AYUDA = "espacio pausa · ← → 5 segundos · - + voz del artista (100/75/50/25 %) · f terminar"
 
 
 def _reloj(segundos: float) -> str:
@@ -134,9 +135,10 @@ class ReproducirConLetra:
                 reproductor.mover(-5)
             elif tecla == "derecha":
                 reproductor.mover(5)
-            elif tecla in ("-", "+", "="):
-                paso = -0.25 if tecla == "-" else 0.25
-                reproductor.ajustar_voz(round(reproductor.voz + paso, 2))
+            elif tecla == "-":
+                reproductor.bajar_voz()
+            elif tecla in ("+", "="):
+                reproductor.subir_voz()
             if reproductor.terminada:
                 time.sleep(0.5)
                 return
