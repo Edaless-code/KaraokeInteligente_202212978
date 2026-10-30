@@ -14,9 +14,11 @@ on:
 permissions:
   contents: write
 
+# La APK tarda ~20 min: no se cancela la que está en curso al subir otro
+# cambio; la más nueva espera su turno (GitHub deja solo una en espera).
 concurrency:
   group: apk-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   apk:
