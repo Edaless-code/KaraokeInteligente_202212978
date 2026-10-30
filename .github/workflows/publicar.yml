@@ -5,7 +5,7 @@ name: Publicar versión
 # la etiqueta lleva un guion (por ejemplo v1.0.0-rc1) se marca como pre-versión.
 on:
   push:
-    paths: ["VERSION"]
+    paths: ["VERSION", ".github/workflows/publicar.yml"]
   workflow_dispatch:
 
 permissions:
