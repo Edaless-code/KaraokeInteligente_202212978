@@ -138,3 +138,22 @@ def test_transcripcion_ignora_unk():
                                        ("...", True), ("I miss the ghost of you", False), ("No sé cómo", False)])
 def test_alucinaciones_de_whisper(texto, es):
     assert es_alucinacion(texto) is es
+
+
+def test_extraccion_segura_de_modelos(tmp_path):
+    import zipfile
+
+    from karaoke.audio.modelos import extraer_seguro
+
+    bueno = tmp_path / "bueno.zip"
+    with zipfile.ZipFile(bueno, "w") as z:
+        z.writestr("modelo/am/final.mdl", "x")
+    extraer_seguro(zipfile.ZipFile(bueno), tmp_path / "salida")
+    assert (tmp_path / "salida" / "modelo" / "am" / "final.mdl").exists()
+
+    malo = tmp_path / "malo.zip"
+    with zipfile.ZipFile(malo, "w") as z:
+        z.writestr("../../fuera.txt", "x")
+    with pytest.raises(RuntimeError):
+        extraer_seguro(zipfile.ZipFile(malo), tmp_path / "salida2")
+    assert not (tmp_path / "fuera.txt").exists()

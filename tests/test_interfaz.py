@@ -71,9 +71,27 @@ def test_corregir_y_borrar_con_confirmacion(carpeta):
               "b", "1", "n", "",
               "b", "sound of you", "s", "", "s"]
     salida = ejecutar(carpeta, teclas)
-    assert "No se borró nada" in salida and "Canción borrada" in salida
-    assert consulta(carpeta, "SELECT nombre_cancion FROM NOMBRES") == [("Ghost of you",)]
-    assert consulta(carpeta, "SELECT linea FROM LETRAS WHERE numero_linea = 1") == [("Primera línea corregida",)]
+    assert "No se borró nada" in salida and "Se movió a la papelera" in salida
+    assert consulta(carpeta, "SELECT nombre_cancion FROM NOMBRES WHERE eliminada_en IS NULL") == [
+        ("Ghost of you",)]
+    assert consulta(carpeta, "SELECT nombre_cancion FROM NOMBRES WHERE eliminada_en IS NOT NULL") == [
+        ("Sound of You",)]
+    assert consulta(carpeta, "SELECT linea FROM LETRAS WHERE codigo = 2 AND numero_linea = 1") == [
+        ("Primera línea corregida",)]
+
+
+def test_papelera_restaurar_y_eliminar(carpeta):
+    teclas = ["f", "t", "", "", "r",
+              "b", "1", "s", "", "b", "2", "s", "",
+              "x", "1", "",                 # la 1 está en la papelera: lo dice claramente
+              "b", "p", "1", "r", "",       # restaura la última borrada (Ghost of you)
+              "1", "e", "s", "", "",        # elimina definitivamente la otra
+              "s"]
+    salida = ejecutar(carpeta, teclas)
+    assert "está en la PAPELERA" in salida
+    assert "se restauró con su mismo código (2)" in salida
+    assert "Eliminada definitivamente" in salida
+    assert consulta(carpeta, "SELECT codigo, eliminada_en FROM NOMBRES") == [(2, None)]
 
 
 def test_programa_y_modo_manual(carpeta):

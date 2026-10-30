@@ -9,18 +9,44 @@ Tablas (ver el manual técnico para el detalle de cada campo):
 * ``PROGRAMA``     lista preplaneada de canciones del cantante.
 * ``SESIONES`` e ``HISTORIAL``  registro de lo que se cantó en cada sesión.
 * ``METADATOS``    versión del esquema.
+
+Borrar una canción NO la elimina de inmediato: se mueve a la **papelera**
+(``NOMBRES.eliminada_en``). Desde ahí se puede restaurar o eliminar
+definitivamente; las que llevan más de ``[letras] dias_papelera`` días se
+eliminan solas al abrir el programa.
+
+Seguridad: todas las consultas usan parámetros (nunca se arma SQL con el texto
+del usuario), las escrituras de varias tablas van en una transacción (todo o
+nada), los textos se limpian de caracteres de control y se limita su longitud.
+Antes de migrar el esquema a una versión nueva se guarda un respaldo.
 """
 
 from __future__ import annotations
 
+import re
+import shutil
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .texto import detectar_idioma, normalizar, semejanza
 
-VERSION_ESQUEMA = 1
+VERSION_ESQUEMA = 2
+
+# Límites de seguridad (protegen la memoria y la base de datos de entradas
+# anómalas). La longitud "normal" de una línea se configura en karaoke.ini.
+MAX_NOMBRE = 150
+MAX_LINEA = 1000
+MAX_LINEAS = 2000
+
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def limpiar_texto(texto: str, maximo: int) -> str:
+    """Quita caracteres de control y espacios de los extremos y recorta."""
+    return _CONTROL.sub("", str(texto)).strip()[:maximo]
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS NOMBRES (
@@ -31,7 +57,8 @@ CREATE TABLE IF NOT EXISTS NOMBRES (
     idioma              TEXT    NOT NULL DEFAULT 'es',
     origen              TEXT    NOT NULL DEFAULT 'manual',
     fecha_registro      TEXT    NOT NULL,
-    veces_cantada       INTEGER NOT NULL DEFAULT 0
+    veces_cantada       INTEGER NOT NULL DEFAULT 0,
+    eliminada_en        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS LETRAS (
@@ -99,6 +126,15 @@ class CancionDuplicada(Exception):
     """Ya existe una canción con ese nombre."""
 
 
+class CancionEnPapelera(CancionDuplicada):
+    """Hay una canción con ese nombre en la papelera."""
+
+    def __init__(self, nombre: str, codigo: int):
+        super().__init__(f"«{nombre}» está en la papelera (código {codigo}). "
+                         "Restáurela o elimínela definitivamente.")
+        self.codigo = codigo
+
+
 @dataclass
 class Cancion:
     codigo: int
@@ -148,9 +184,14 @@ class BaseDatos:
     def _preparar(self) -> None:
         c = self.conexion
         c.execute("PRAGMA foreign_keys = ON")
+        version = self._version_guardada()
+        if self.existia and version < VERSION_ESQUEMA:
+            self._respaldar(f"antes-de-v{VERSION_ESQUEMA}")
         c.executescript(ESQUEMA)
+        self._migrar(version)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_nombres_papelera ON NOMBRES(eliminada_en)")
         c.execute(
-            "INSERT OR IGNORE INTO METADATOS(clave, valor) VALUES ('version_esquema', ?)",
+            "INSERT OR REPLACE INTO METADATOS(clave, valor) VALUES ('version_esquema', ?)",
             (str(VERSION_ESQUEMA),),
         )
         c.execute(
@@ -161,26 +202,85 @@ class BaseDatos:
         c.execute("UPDATE SESIONES SET fin = inicio WHERE fin IS NULL")
         c.commit()
 
+    def _version_guardada(self) -> int:
+        try:
+            fila = self.conexion.execute(
+                "SELECT valor FROM METADATOS WHERE clave = 'version_esquema'").fetchone()
+        except sqlite3.OperationalError:
+            return 0
+        return int(fila[0]) if fila else 0
+
+    def _columnas(self, tabla: str) -> set[str]:
+        return {f[1] for f in self.conexion.execute(f"PRAGMA table_info({tabla})")}
+
+    def _migrar(self, desde: int) -> None:
+        """Migraciones del esquema. Cada versión nueva agrega aquí sus pasos;
+        las bases de versiones anteriores se actualizan solas al abrirse."""
+        if "eliminada_en" not in self._columnas("NOMBRES"):  # versión 2: papelera
+            self.conexion.execute("ALTER TABLE NOMBRES ADD COLUMN eliminada_en TEXT")
+
+    def _respaldar(self, motivo: str) -> Path | None:
+        """Copia la base de datos antes de una operación delicada."""
+        if not self.ruta.exists() or self.ruta.name == ":memory:":
+            return None
+        destino = self.ruta.with_name(f"{self.ruta.stem}.respaldo-{motivo}{self.ruta.suffix}")
+        self.conexion.commit()
+        shutil.copy2(self.ruta, destino)
+        return destino
+
+    @contextmanager
+    def _transaccion(self):
+        """Todo o nada: si algo falla a la mitad no queda la canción a medias."""
+        try:
+            yield self.conexion
+            self.conexion.commit()
+        except Exception:
+            self.conexion.rollback()
+            raise
+        self.revision += 1
+
     def integridad(self) -> str:
         return self.conexion.execute("PRAGMA quick_check").fetchone()[0]
 
     def cerrar(self) -> None:
         self.conexion.close()
 
-    def _cambio(self) -> None:
-        self.conexion.commit()
-        self.revision += 1
-
     # -------------------------------------------------------------- canciones
     def contar_canciones(self) -> int:
-        return self.conexion.execute("SELECT COUNT(*) FROM NOMBRES").fetchone()[0]
+        return self.conexion.execute(
+            "SELECT COUNT(*) FROM NOMBRES WHERE eliminada_en IS NULL").fetchone()[0]
 
     def existe_nombre(self, nombre: str) -> int | None:
+        """Código de la canción ACTIVA con ese nombre (sin contar la papelera)."""
         fila = self.conexion.execute(
-            "SELECT codigo FROM NOMBRES WHERE nombre_normalizado = ?",
+            "SELECT codigo FROM NOMBRES WHERE nombre_normalizado = ? AND eliminada_en IS NULL",
             (normalizar(nombre),),
         ).fetchone()
         return fila[0] if fila else None
+
+    def _verificar_nombre_libre(self, nombre: str, propio: int | None = None) -> None:
+        fila = self.conexion.execute(
+            "SELECT codigo, eliminada_en FROM NOMBRES WHERE nombre_normalizado = ?",
+            (normalizar(nombre),),
+        ).fetchone()
+        if fila and fila[0] != propio:
+            if fila[1] is not None:
+                raise CancionEnPapelera(nombre, fila[0])
+            raise CancionDuplicada(f"Ya existe una canción llamada «{nombre}».")
+
+    @staticmethod
+    def _validar(nombre: str | None, lineas: list[str] | None) -> tuple[str, list[str]]:
+        if nombre is not None:
+            nombre = limpiar_texto(nombre, MAX_NOMBRE)
+            if not normalizar(nombre):
+                raise ValueError("El nombre de la canción no puede estar vacío.")
+        if lineas is not None:
+            lineas = [l for l in (limpiar_texto(x, MAX_LINEA) for x in lineas) if l]
+            if not lineas:
+                raise ValueError("La canción debe tener al menos una línea.")
+            if len(lineas) > MAX_LINEAS:
+                raise ValueError(f"La canción no puede tener más de {MAX_LINEAS} líneas.")
+        return nombre, lineas
 
     def agregar_cancion(
         self,
@@ -190,22 +290,17 @@ class BaseDatos:
         artista: str = "",
         idioma: str | None = None,
     ) -> int:
-        nombre = nombre.strip()
-        if not nombre:
-            raise ValueError("El nombre de la canción no puede estar vacío.")
-        lineas = [l.strip() for l in lineas if l.strip()]
-        if not lineas:
-            raise ValueError("La canción debe tener al menos una línea.")
-        if self.existe_nombre(nombre) is not None:
-            raise CancionDuplicada(f"Ya existe una canción llamada «{nombre}».")
-        cur = self.conexion.execute(
-            "INSERT INTO NOMBRES(nombre_cancion, nombre_normalizado, artista, idioma, origen,"
-            " fecha_registro) VALUES (?, ?, ?, ?, ?, ?)",
-            (nombre, normalizar(nombre), artista.strip(), idioma or detectar_idioma(lineas), origen, _ahora()),
-        )
-        codigo = cur.lastrowid
-        self._insertar_lineas(codigo, lineas)
-        self._cambio()
+        nombre, lineas = self._validar(nombre, lineas)
+        self._verificar_nombre_libre(nombre)
+        with self._transaccion() as c:
+            cur = c.execute(
+                "INSERT INTO NOMBRES(nombre_cancion, nombre_normalizado, artista, idioma, origen,"
+                " fecha_registro) VALUES (?, ?, ?, ?, ?, ?)",
+                (nombre, normalizar(nombre), limpiar_texto(artista, MAX_NOMBRE),
+                 idioma or detectar_idioma(lineas), origen, _ahora()),
+            )
+            codigo = cur.lastrowid
+            self._insertar_lineas(codigo, lineas)
         return codigo
 
     def _insertar_lineas(self, codigo: int, lineas: list[str]) -> None:
@@ -214,11 +309,11 @@ class BaseDatos:
             [(codigo, i, l, normalizar(l)) for i, l in enumerate(lineas, start=1)],
         )
 
-    def obtener_cancion(self, codigo: int) -> Cancion | None:
+    def obtener_cancion(self, codigo: int, incluir_papelera: bool = False) -> Cancion | None:
         fila = self.conexion.execute(
             "SELECT codigo, nombre_cancion, artista, origen, veces_cantada, idioma FROM NOMBRES"
-            " WHERE codigo = ?",
-            (codigo,),
+            " WHERE codigo = ? AND (? OR eliminada_en IS NULL)",
+            (codigo, incluir_papelera),
         ).fetchone()
         if not fila:
             return None
@@ -236,7 +331,7 @@ class BaseDatos:
             (r[0], r[1], r[2])
             for r in self.conexion.execute(
                 "SELECT n.codigo, n.nombre_cancion, COUNT(l.id) FROM NOMBRES n"
-                " LEFT JOIN LETRAS l ON l.codigo = n.codigo"
+                " LEFT JOIN LETRAS l ON l.codigo = n.codigo WHERE n.eliminada_en IS NULL"
                 " GROUP BY n.codigo ORDER BY n.codigo LIMIT ? OFFSET ?",
                 (cantidad, desde),
             )
@@ -244,7 +339,9 @@ class BaseDatos:
 
     def todas_las_letras(self) -> dict[int, Cancion]:
         canciones: dict[int, Cancion] = {}
-        for r in self.conexion.execute("SELECT codigo, nombre_cancion, idioma FROM NOMBRES"):
+        for r in self.conexion.execute(
+            "SELECT codigo, nombre_cancion, idioma FROM NOMBRES WHERE eliminada_en IS NULL"
+        ):
             canciones[r[0]] = Cancion(r[0], r[1], idioma=r[2])
         for r in self.conexion.execute(
             "SELECT codigo, linea FROM LETRAS ORDER BY codigo, numero_linea"
@@ -260,7 +357,7 @@ class BaseDatos:
         if not consulta:
             return []
         filas = self.conexion.execute(
-            "SELECT codigo, nombre_cancion, nombre_normalizado FROM NOMBRES"
+            "SELECT codigo, nombre_cancion, nombre_normalizado FROM NOMBRES WHERE eliminada_en IS NULL"
         ).fetchall()
         exactos = [(f[0], f[1]) for f in filas if f[2] == consulta]
         if exactos:
@@ -285,33 +382,73 @@ class BaseDatos:
         return self.buscar_por_nombre(texto)
 
     def actualizar_letra(self, codigo: int, lineas: list[str]) -> None:
-        lineas = [l.strip() for l in lineas if l.strip()]
-        if not lineas:
-            raise ValueError("La canción debe tener al menos una línea.")
-        self.conexion.execute("DELETE FROM LETRAS WHERE codigo = ?", (codigo,))
-        self._insertar_lineas(codigo, lineas)
-        self.conexion.execute(
-            "UPDATE NOMBRES SET idioma = ? WHERE codigo = ?", (detectar_idioma(lineas), codigo)
-        )
-        self._cambio()
+        _, lineas = self._validar(None, lineas)
+        with self._transaccion() as c:
+            c.execute("DELETE FROM LETRAS WHERE codigo = ?", (codigo,))
+            self._insertar_lineas(codigo, lineas)
+            c.execute("UPDATE NOMBRES SET idioma = ? WHERE codigo = ?", (detectar_idioma(lineas), codigo))
 
     def renombrar(self, codigo: int, nombre: str) -> None:
-        nombre = nombre.strip()
-        if not nombre:
-            raise ValueError("El nombre de la canción no puede estar vacío.")
-        otro = self.existe_nombre(nombre)
-        if otro is not None and otro != codigo:
-            raise CancionDuplicada(f"Ya existe una canción llamada «{nombre}».")
-        self.conexion.execute(
-            "UPDATE NOMBRES SET nombre_cancion = ?, nombre_normalizado = ? WHERE codigo = ?",
-            (nombre, normalizar(nombre), codigo),
-        )
-        self._cambio()
+        nombre, _ = self._validar(nombre, None)
+        self._verificar_nombre_libre(nombre, propio=codigo)
+        with self._transaccion() as c:
+            c.execute(
+                "UPDATE NOMBRES SET nombre_cancion = ?, nombre_normalizado = ? WHERE codigo = ?",
+                (nombre, normalizar(nombre), codigo),
+            )
 
+    # --------------------------------------------------------------- papelera
     def borrar_cancion(self, codigo: int) -> bool:
-        cur = self.conexion.execute("DELETE FROM NOMBRES WHERE codigo = ?", (codigo,))
-        self._cambio()
+        """Mueve la canción a la papelera (se puede restaurar)."""
+        with self._transaccion() as c:
+            cur = c.execute(
+                "UPDATE NOMBRES SET eliminada_en = ? WHERE codigo = ? AND eliminada_en IS NULL",
+                (_ahora(), codigo),
+            )
         return cur.rowcount > 0
+
+    def en_papelera(self, codigo: int) -> bool:
+        fila = self.conexion.execute(
+            "SELECT eliminada_en FROM NOMBRES WHERE codigo = ?", (codigo,)).fetchone()
+        return bool(fila and fila[0])
+
+    def listar_papelera(self) -> list[tuple[int, str, int, str]]:
+        """(código, nombre, número de líneas, fecha en que se borró)."""
+        return [
+            (r[0], r[1], r[2], r[3])
+            for r in self.conexion.execute(
+                "SELECT n.codigo, n.nombre_cancion, COUNT(l.id), n.eliminada_en FROM NOMBRES n"
+                " LEFT JOIN LETRAS l ON l.codigo = n.codigo WHERE n.eliminada_en IS NOT NULL"
+                " GROUP BY n.codigo ORDER BY n.eliminada_en DESC, n.codigo DESC"
+            )
+        ]
+
+    def restaurar_cancion(self, codigo: int) -> bool:
+        with self._transaccion() as c:
+            cur = c.execute(
+                "UPDATE NOMBRES SET eliminada_en = NULL WHERE codigo = ? AND eliminada_en IS NOT NULL",
+                (codigo,),
+            )
+        return cur.rowcount > 0
+
+    def eliminar_definitivamente(self, codigo: int) -> bool:
+        """Borra para siempre una canción que está en la papelera (y su letra)."""
+        with self._transaccion() as c:
+            cur = c.execute(
+                "DELETE FROM NOMBRES WHERE codigo = ? AND eliminada_en IS NOT NULL", (codigo,))
+        return cur.rowcount > 0
+
+    def vaciar_papelera(self, mas_de_dias: float | None = None) -> int:
+        """Elimina definitivamente lo que está en la papelera (o solo lo que
+        lleva más de ``mas_de_dias`` días)."""
+        if mas_de_dias is None:
+            limite = "9999-12-31 23:59:59"
+        else:
+            limite = (datetime.now() - timedelta(days=mas_de_dias)).strftime("%Y-%m-%d %H:%M:%S")
+        with self._transaccion() as c:
+            cur = c.execute(
+                "DELETE FROM NOMBRES WHERE eliminada_en IS NOT NULL AND eliminada_en <= ?", (limite,))
+        return cur.rowcount
 
     # ----------------------------------------------------- tablas temporales
     def crear_temporal(self, nombre_sugerido: str = "", motor: str = "") -> int:
@@ -329,7 +466,7 @@ class BaseDatos:
         ).fetchone()[0]
         self.conexion.execute(
             "INSERT INTO TEMP_LETRAS(id_temporal, numero_linea, linea, confianza) VALUES (?, ?, ?, ?)",
-            (id_temporal, siguiente, linea.strip(), confianza),
+            (id_temporal, siguiente, limpiar_texto(linea, MAX_LINEA), confianza),
         )
         self.conexion.commit()
         return siguiente
@@ -369,12 +506,13 @@ class BaseDatos:
         return CancionTemporal(fila[0], fila[1], fila[2], fila[3], lineas)
 
     def actualizar_temporal(self, id_temporal: int, lineas: list[str]) -> None:
-        self.conexion.execute("DELETE FROM TEMP_LETRAS WHERE id_temporal = ?", (id_temporal,))
-        self.conexion.executemany(
-            "INSERT INTO TEMP_LETRAS(id_temporal, numero_linea, linea) VALUES (?, ?, ?)",
-            [(id_temporal, i, l.strip()) for i, l in enumerate(lineas, 1) if l.strip()],
-        )
-        self.conexion.commit()
+        lineas = [l for l in (limpiar_texto(x, MAX_LINEA) for x in lineas) if l]
+        with self._transaccion() as c:
+            c.execute("DELETE FROM TEMP_LETRAS WHERE id_temporal = ?", (id_temporal,))
+            c.executemany(
+                "INSERT INTO TEMP_LETRAS(id_temporal, numero_linea, linea) VALUES (?, ?, ?)",
+                [(id_temporal, i, l) for i, l in enumerate(lineas, 1)],
+            )
 
     def promover_temporal(self, id_temporal: int, nombre: str, artista: str = "") -> int:
         """Pasa una canción de las tablas temporales a las permanentes."""
@@ -391,18 +529,21 @@ class BaseDatos:
 
     # --------------------------------------------------------------- programa
     def guardar_programa(self, entradas: list[tuple[str, int | None]]) -> None:
-        self.conexion.execute("DELETE FROM PROGRAMA")
-        self.conexion.executemany(
-            "INSERT INTO PROGRAMA(orden, nombre_solicitado, codigo) VALUES (?, ?, ?)",
-            [(i, n, c) for i, (n, c) in enumerate(entradas, start=1)],
-        )
-        self.conexion.commit()
+        with self._transaccion() as c:
+            c.execute("DELETE FROM PROGRAMA")
+            c.executemany(
+                "INSERT INTO PROGRAMA(orden, nombre_solicitado, codigo) VALUES (?, ?, ?)",
+                [(i, limpiar_texto(n, MAX_NOMBRE), cod) for i, (n, cod) in enumerate(entradas, start=1)],
+            )
 
     def obtener_programa(self) -> list[EntradaPrograma]:
+        """Las canciones que están en la papelera aparecen sin código."""
         return [
             EntradaPrograma(r[0], r[1], r[2], r[3])
             for r in self.conexion.execute(
-                "SELECT orden, nombre_solicitado, codigo, estado FROM PROGRAMA ORDER BY orden"
+                "SELECT p.orden, p.nombre_solicitado,"
+                " CASE WHEN n.eliminada_en IS NULL THEN p.codigo END, p.estado"
+                " FROM PROGRAMA p LEFT JOIN NOMBRES n ON n.codigo = p.codigo ORDER BY p.orden"
             )
         ]
 
@@ -474,7 +615,8 @@ class BaseDatos:
             (r[0], r[1], r[2])
             for r in self.conexion.execute(
                 "SELECT codigo, nombre_cancion, veces_cantada FROM NOMBRES"
-                " WHERE veces_cantada > 0 ORDER BY veces_cantada DESC, codigo LIMIT ?",
+                " WHERE veces_cantada > 0 AND eliminada_en IS NULL"
+                " ORDER BY veces_cantada DESC, codigo LIMIT ?",
                 (limite,),
             )
         ]

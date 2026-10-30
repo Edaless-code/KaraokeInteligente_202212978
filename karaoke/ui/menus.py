@@ -58,11 +58,15 @@ class Aplicacion:
     def elegir_cancion(self, mensaje: str = "Nombre o código de la canción: ") -> Cancion | None:
         """Pide un nombre o código; si hay varias coincidencias deja elegir."""
         texto = self.preguntar(mensaje)
-        if not texto:
-            return None
+        return self._elegir_de(texto) if texto else None
+
+    def _elegir_de(self, texto: str) -> Cancion | None:
         encontradas = self.bd.resolver(texto)
         if not encontradas:
-            consola.error(f"No existe ninguna canción con el código o nombre «{texto}».")
+            if texto.isdigit() and self.bd.en_papelera(int(texto)):
+                consola.error(f"La canción {texto} está en la papelera (opción b → P para restaurarla).")
+            else:
+                consola.error(f"No existe ninguna canción con el código o nombre «{texto}».")
             return None
         if len(encontradas) > 1:
             print("Se encontraron varias canciones:")
@@ -170,7 +174,11 @@ class Aplicacion:
             return
         cancion = self.bd.obtener_cancion(int(texto))
         if cancion is None:
-            consola.error(f"NO EXISTE ninguna canción con el código {texto}.")
+            if self.bd.en_papelera(int(texto)):
+                consola.error(f"La canción con el código {texto} está en la PAPELERA "
+                              "(opción b → P para restaurarla).")
+            else:
+                consola.error(f"NO EXISTE ninguna canción con el código {texto}.")
             self.teclado.pausa()
             return
         renglones = [f"  {i:>3}. {l}" for i, l in enumerate(cancion.lineas, 1)]
@@ -265,7 +273,14 @@ class Aplicacion:
     # ------------------------------------------------------------------ (b)
     def borrar_cancion(self) -> None:
         consola.titulo("Borrar una canción")
-        cancion = self.elegir_cancion()
+        papelera = len(self.bd.listar_papelera())
+        if papelera:
+            print(color(f"  ({papelera} en la papelera: escriba P para verla)", "tenue"))
+        texto = self.preguntar("Nombre o código de la canción: ")
+        if texto.lower() == "p":
+            self.ver_papelera()
+            return
+        cancion = self._elegir_de(texto) if texto else None
         if cancion is None:
             self.teclado.pausa()
             return
@@ -273,13 +288,49 @@ class Aplicacion:
         for linea in cancion.lineas[:3]:
             print(color(f"      {linea}", "tenue"))
         if self.teclado.confirmar(color(
-            f"¿Está SEGURO de borrar «{cancion.nombre}» y toda su letra? No se puede deshacer",
-            "rojo", "negrita")):
+            f"¿Está SEGURO de borrar «{cancion.nombre}» y toda su letra?", "rojo", "negrita")):
             self.bd.borrar_cancion(cancion.codigo)
-            consola.exito("Canción borrada.")
+            dias = self.config.entero("letras", "dias_papelera")
+            plazo = f" durante {dias} días" if dias > 0 else ""
+            consola.exito(f"Canción borrada. Se movió a la papelera{plazo}: "
+                          "puede restaurarla desde (b) escribiendo P.")
         else:
             consola.aviso("No se borró nada.")
         self.teclado.pausa()
+
+    def ver_papelera(self) -> None:
+        """Papelera: restaurar o eliminar definitivamente canciones borradas."""
+        while True:
+            consola.limpiar()
+            consola.titulo("Papelera")
+            borradas = self.bd.listar_papelera()
+            if not borradas:
+                consola.aviso("La papelera está vacía.")
+                self.teclado.pausa()
+                return
+            for numero, (codigo, nombre, lineas, fecha) in enumerate(borradas, 1):
+                print(f"  {numero:>2}. [{codigo}] {nombre} · {lineas} líneas · borrada el {fecha}")
+            print(color("\n  [número] elegir   [v] vaciar la papelera   [Enter] regresar", "cian"))
+            opcion = self.preguntar("Opción: ").lower()
+            if opcion == "v":
+                if self.teclado.confirmar(color("¿Eliminar DEFINITIVAMENTE todo lo que está en la "
+                                                "papelera? No se puede deshacer", "rojo", "negrita")):
+                    consola.exito(f"Se eliminaron {self.bd.vaciar_papelera()} canción(es).")
+                    self.teclado.pausa()
+                continue
+            if not opcion.isdigit() or not 1 <= int(opcion) <= len(borradas):
+                return
+            codigo, nombre = borradas[int(opcion) - 1][:2]
+            accion = self.preguntar(f"«{nombre}»: (r) restaurar · (e) eliminar definitivamente: ").lower()
+            if accion == "r":
+                self.bd.restaurar_cancion(codigo)
+                consola.exito(f"«{nombre}» se restauró con su mismo código ({codigo}).")
+                self.teclado.pausa()
+            elif accion == "e" and self.teclado.confirmar(color(
+                    f"¿Eliminar «{nombre}» para siempre? No se puede deshacer", "rojo", "negrita")):
+                self.bd.eliminar_definitivamente(codigo)
+                consola.exito("Eliminada definitivamente.")
+                self.teclado.pausa()
 
     # ------------------------------------------------------------------ (f)
     def menu_alimentacion(self) -> None:

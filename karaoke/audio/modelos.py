@@ -45,6 +45,17 @@ def idiomas_disponibles(config: Config) -> list[str]:
     return [idioma for idioma in MODELOS if modelo_valido(ruta_modelo(config, idioma))]
 
 
+def extraer_seguro(comprimido: zipfile.ZipFile, destino: Path) -> None:
+    """Descomprime verificando que ningún archivo quede FUERA de ``destino``
+    (protección contra rutas como ``../../Windows/...`` dentro del ZIP)."""
+    destino = destino.resolve()
+    for miembro in comprimido.infolist():
+        ruta = (destino / miembro.filename).resolve()
+        if ruta != destino and destino not in ruta.parents:
+            raise RuntimeError(f"El archivo comprimido contiene una ruta no permitida: {miembro.filename}")
+    comprimido.extractall(destino)
+
+
 def descargar_modelo(
     idioma: str,
     destino: Path,
@@ -69,7 +80,7 @@ def descargar_modelo(
                     if progreso:
                         progreso(leidos, total)
         with zipfile.ZipFile(archivo_zip) as comprimido:
-            comprimido.extractall(temporal)
+            extraer_seguro(comprimido, Path(temporal))
         extraido = Path(temporal) / nombre
         if destino.exists():
             shutil.rmtree(destino)

@@ -36,6 +36,9 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "lineas_maximas_cancion": "500",
         # Cuántos elementos se despliegan por pantalla en las opciones (w) y (x).
         "elementos_por_pagina": "10",
+        # Días que una canción borrada se conserva en la papelera antes de
+        # eliminarse definitivamente (0 = nunca se elimina sola).
+        "dias_papelera": "30",
     },
     "programa": {
         # Archivo de texto con la lista preplaneada de canciones.

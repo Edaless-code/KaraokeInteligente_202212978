@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import Config
-from .db import BaseDatos, CancionDuplicada
+from .db import BaseDatos, CancionDuplicada, CancionEnPapelera
 from .texto import ajustar_linea, es_etiqueta, leer_texto
 
 _ENCABEZADO = re.compile(r"^\s*(?:#+|nombre\s*:)\s*(.*)$", re.IGNORECASE)
@@ -97,6 +97,10 @@ def importar_archivo(bd: BaseDatos, ruta: str | Path, config: Config) -> Resulta
         try:
             codigo = bd.agregar_cancion(nombre, ajustadas, origen="archivo")
             resultado.agregadas.append((codigo, nombre))
+        except CancionEnPapelera:
+            resultado.omitidas.append((nombre, "está en la papelera (restáurela si la quiere de vuelta)"))
         except CancionDuplicada:
             resultado.omitidas.append((nombre, "ya existe en la base de datos"))
+        except ValueError as ex:
+            resultado.omitidas.append((nombre, str(ex)))
     return resultado

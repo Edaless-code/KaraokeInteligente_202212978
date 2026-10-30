@@ -244,6 +244,19 @@ Al cargarlo, el programa busca cada nombre en la base de datos aunque tenga erro
 
 - **b:** pide el **nombre o el código**, muestra la canción y pregunta **"¿Está SEGURO de borrar…? (s/n)"**. Solo con **s** se borra la canción **y toda su letra**.
 
+### Papelera *(agregada)*
+
+Borrar una canción **no la elimina de inmediato**: se mueve a la **papelera**, por si después se quiere recuperar.
+
+- Para abrirla, en la opción **b** escriba **P** en lugar del nombre. Es un acceso discreto para que no se use por accidente.
+- Elija la canción por su número:
+  - **r** la **restaura** con su mismo código y su letra;
+  - **e** la **elimina definitivamente**, después de una confirmación.
+- **v** vacía toda la papelera, también con confirmación.
+- Lo que lleva más de **30 días** en la papelera se elimina solo al abrir el programa. El plazo se cambia con `dias_papelera` en `karaoke.ini`; `0` = nunca.
+- Mientras una canción está en la papelera no aparece en las búsquedas, en la lista (**w**) ni en el programa. Si se pide su código en **x**, el programa avisa que está en la papelera.
+- En Android, la papelera está en **Más → Papelera**.
+
 ---
 
 ## 10. Opciones agregadas (h, k, d)
@@ -271,6 +284,7 @@ accion_linea_larga = dividir     ; dividir | truncar | conservar
 lineas_promedio_cancion = 10     ; promedio de líneas por canción
 lineas_maximas_cancion = 500     ; máximo aceptado por canción
 elementos_por_pagina = 10        ; de cuántos en cuántos se muestra en (w) y (x)
+dias_papelera = 30               ; días que una canción borrada se conserva en la papelera
 ```
 
 4. Guarde y vuelva a abrir el programa.

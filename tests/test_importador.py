@@ -66,3 +66,20 @@ def test_importa_los_ejemplos_del_proyecto(entorno):
     resultado = importar_archivo(bd, "ejemplos/canciones.txt", config)
     assert not resultado.omitidas
     assert len(resultado.agregadas) >= 2
+
+
+def test_importar_avisa_si_la_cancion_esta_en_la_papelera(entorno):
+    config, bd, carpeta = entorno
+    bd.borrar_cancion(bd.agregar_cancion("Borrada", ["x"]))
+    (carpeta / "c.txt").write_text("Borrada\nuna linea\n", encoding="utf-8")
+    resultado = importar_archivo(bd, carpeta / "c.txt", config)
+    assert "papelera" in dict(resultado.omitidas)["Borrada"]
+
+
+def test_rechaza_archivos_enormes(entorno, monkeypatch):
+    config, bd, carpeta = entorno
+    import karaoke.texto as texto
+    (carpeta / "grande.txt").write_text("x" * 2000, encoding="utf-8")
+    monkeypatch.setattr(texto, "MAX_BYTES_TEXTO", 1000)
+    with pytest.raises(ValueError):
+        texto.leer_texto(carpeta / "grande.txt", maximo=1000)

@@ -82,10 +82,18 @@ def ajustar_linea(linea: str, maximo: int, accion: str) -> list[str]:
     return dividir_linea(linea, maximo)
 
 
-def leer_texto(ruta: str | Path) -> str:
+MAX_BYTES_TEXTO = 5 * 1024 * 1024  # 5 MB: miles de canciones; protege la memoria
+
+
+def leer_texto(ruta: str | Path, maximo: int = MAX_BYTES_TEXTO) -> str:
     """Lee un archivo de texto probando UTF-8 (con o sin BOM) y luego las
-    codificaciones típicas de Windows (Bloc de notas antiguo)."""
-    datos = Path(ruta).read_bytes()
+    codificaciones típicas de Windows (Bloc de notas antiguo). Rechaza los
+    archivos de más de ``maximo`` bytes."""
+    ruta = Path(ruta)
+    if ruta.stat().st_size > maximo:
+        raise ValueError(f"El archivo {ruta.name} pesa más de {maximo // (1024 * 1024)} MB; "
+                         "no parece un archivo de letras.")
+    datos = ruta.read_bytes()
     for codificacion in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             texto = datos.decode(codificacion)

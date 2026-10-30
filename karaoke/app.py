@@ -29,6 +29,9 @@ def main(argumentos: list[str] | None = None) -> int:
     config = cargar_config(opciones.carpeta)
     consola.inicializar(config.booleano("pantalla", "colores"))
     bd = BaseDatos(config.ruta_bd)
+    dias = config.entero("letras", "dias_papelera")
+    if dias > 0 and (purgadas := bd.vaciar_papelera(mas_de_dias=dias)):
+        print(f"Se eliminaron definitivamente {purgadas} canción(es) con más de {dias} días en la papelera.")
     if bd.existia:
         estado = bd.integridad()
         print(f"Base de datos CANCIONES encontrada ({bd.contar_canciones()} canciones). "

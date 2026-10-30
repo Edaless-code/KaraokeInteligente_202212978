@@ -21,7 +21,9 @@ Este documento explica cómo está construido el programa y cómo se resolvió e
 11. [Versión para Android](#11-versión-para-android)
 12. [Suposiciones y decisiones de diseño](#12-suposiciones-y-decisiones-de-diseño)
 13. [Limitaciones conocidas y mejoras futuras](#13-limitaciones-conocidas-y-mejoras-futuras)
-14. [Derechos de autor de las canciones de ejemplo](#derechos-de-autor-de-las-canciones-de-ejemplo)
+14. [Seguridad](#14-seguridad)
+15. [Escalabilidad y versiones futuras](#15-escalabilidad-y-versiones-futuras)
+16. [Derechos de autor de las canciones de ejemplo](#derechos-de-autor-de-las-canciones-de-ejemplo)
 
 ---
 
@@ -48,7 +50,7 @@ cd KaraokeInteligente_202212978
 pip install -r requirements.txt
 pip install faster-whisper          # opcional, mejora el modo automático
 python main.py                      # programa interactivo
-python -m pytest                    # 135 pruebas automatizadas
+python -m pytest                    # 147 pruebas automatizadas
 ```
 
 Los modelos de Vosk se descargan desde el propio programa la primera vez: el modo automático lo ofrece y también la opción *d*. También se pueden copiar a mano en `modelo/`:
@@ -146,6 +148,7 @@ Archivo: **`CANCIONES.db`**, junto al programa. El nombre se configura en `[base
 | `origen` | TEXT | *(agregado)* `archivo`, `manual` o `automatico` |
 | `fecha_registro` | TEXT | *(agregado)* |
 | `veces_cantada` | INTEGER | *(agregado)* Cuenta las interpretaciones completas |
+| `eliminada_en` | TEXT, nulo | *(agregado, esquema v2)* Fecha en que se movió a la **papelera**. `NULL` = canción activa |
 
 **`LETRAS`**
 
@@ -166,7 +169,17 @@ Archivo: **`CANCIONES.db`**, junto al programa. El nombre se configura en `[base
 | `PROGRAMA` | `orden`, `nombre_solicitado`, `codigo` (FK, `ON DELETE SET NULL`), `estado` | Programa del cantante: `pendiente`, `cantada` o `saltada` |
 | `SESIONES` | `id_sesion`, `modo`, `inicio`, `fin` | Cada sesión de karaoke |
 | `HISTORIAL` | `id`, `id_sesion`, `codigo`, `nombre_cancion`, `modo`, `inicio`, `fin`, `lineas_mostradas`, `completada` | Cada interpretación, para la opción *h* |
-| `METADATOS` | `clave`, `valor` | Versión del esquema y fecha de creación |
+| `METADATOS` | `clave`, `valor` | Versión del esquema (actualmente **2**) y fecha de creación |
+
+### Papelera
+
+Borrar una canción **no la elimina de inmediato**: `borrar_cancion()` llena `NOMBRES.eliminada_en` (borrado lógico) y la letra se conserva.
+
+- Todas las consultas de uso normal filtran `eliminada_en IS NULL`: lista, búsqueda, índice del buscador, programa y estadísticas.
+- `restaurar_cancion()` la devuelve **con el mismo código**.
+- `eliminar_definitivamente()` la borra de verdad. Por `ON DELETE CASCADE`, se va también su letra.
+- `vaciar_papelera(mas_de_dias)` elimina lo que lleva más de `dias_papelera` días (30 por omisión). Se ejecuta al abrir el programa.
+- El nombre de una canción en la papelera **no se puede reutilizar** (excepción `CancionEnPapelera`), para no perder la posibilidad de restaurarla. El usuario decide si la restaura o la elimina.
 
 > **Tablas temporales.** Son tablas **permanentes de "pendientes"**, no `CREATE TEMP TABLE` de SQLite. Una tabla TEMP desaparece al cerrar la conexión, y la especificación pide poder **corregir la letra y averiguar el nombre después**, quizás en otra sesión. La revisión se hace en *f → v*, y `promover_temporal()` las pasa a `NOMBRES`/`LETRAS`.
 
@@ -380,14 +393,14 @@ Se crea la primera vez junto al programa. Si falta una clave, se usa su valor po
 ## 9. Pruebas automatizadas e integración continua
 
 ```bash
-python -m pytest        # 135 pruebas, unos 5 segundos
+python -m pytest        # 147 pruebas, unos 6 segundos
 ```
 
 | Archivo | Qué prueba |
 |---|---|
 | `test_texto.py` | Normalización, tildes, ñ, apóstrofos, división de líneas, etiquetas, idioma, archivos UTF-8/ANSI/BOM/CRLF |
 | `test_config.py` | Creación y lectura de `karaoke.ini`, valores inválidos, `KARAOKE_HOME` |
-| `test_db.py` | Creación y detección de la base, códigos automáticos que no se reutilizan, duplicados, cascada al borrar, temporales, programa, historial, sesiones abiertas |
+| `test_db.py` | Creación y detección de la base, códigos automáticos que no se reutilizan, duplicados, papelera (restaurar, eliminar, purga por antigüedad), transacciones, limpieza de textos, inyección SQL, migración v1 → v2 con respaldo, temporales, programa, historial, sesiones abiertas |
 | `test_importador.py` | Los dos formatos, etiquetas, CRLF, duplicadas, líneas largas, archivos ANSI |
 | `test_buscador.py` | Identificación con errores de dedo, rechazo con poca evidencia, desempate por programa, índice que se actualiza |
 | `test_programa_sesion.py` | PROGRAMA flexible, acciones c/i/r/g/s/a, sesión completa |
@@ -462,6 +475,7 @@ El ejecutable busca `karaoke.ini`, `CANCIONES.db`, `PROGRAMA.txt` y `modelo/` **
 | 15 | ¿Cuándo termina la sesión? | Con **f**. En automático, opcionalmente, tras un silencio configurable |
 | 16 | Opciones agregadas | **a** atrás, **b** buscar otra, **n** siguiente del programa, **x** abandonar, **t** terminar de aprender; menú **h** historial, **d** diagnóstico de audio, **k** configuración |
 | 17 | Interfaz | Consola, que funciona igual en Windows y Android/Termux. Letra resaltada en amarillo y grande, colores ANSI y teclas sin Enter |
+| 18 | Borrar una canción | Se mueve a una **papelera** discreta (opción *b* → *P*; en Android, *Más → Papelera*) y se elimina sola a los 30 días. La especificación pide confirmar antes de borrar; la papelera agrega la posibilidad de recuperarla |
 
 ---
 
@@ -473,6 +487,31 @@ El ejecutable busca `karaoke.ini`, `CANCIONES.db`, `PROGRAMA.txt` y `modelo/` **
 - **Vosk solo tiene modelos pequeños en algunos idiomas.** Las líneas en español de una canción en inglés no las reconoce el canal restringido de Vosk en inglés; las cubren Whisper y la predicción por tempo.
 - **Whisper en una CPU lenta** puede tardar más que la ventana de 6 s. El programa descarta ventanas para no retrasarse, y Vosk sigue funcionando.
 - **Interfaz gráfica:** la versión actual es de consola. Está prevista una interfaz gráfica y una versión web.
+
+---
+
+## 14. Seguridad
+
+| Riesgo | Medida |
+|---|---|
+| **Inyección SQL** | Todas las consultas usan **parámetros** (`?`); nunca se arma SQL con texto del usuario. Una prueba guarda el nombre `x'); DROP TABLE NOMBRES; --` y verifica que se trata como texto |
+| **Datos a medias** si algo falla | Las escrituras que tocan varias tablas (canción + letra, programa, temporales) van en una **transacción**: todo o nada (`_transaccion()`, con `rollback` si hay error). Hay una prueba que simula una falla a la mitad |
+| **Integridad referencial** | `PRAGMA foreign_keys = ON`, `ON DELETE CASCADE` para la letra y `ON DELETE SET NULL` para el programa. Al abrir se ejecuta `PRAGMA quick_check` |
+| **Entradas anómalas** | Los textos se limpian de caracteres de control y se limitan: nombre ≤ 150, línea ≤ 1000 caracteres y ≤ 2000 líneas por canción. Los archivos de texto de más de **5 MB** se rechazan |
+| **Borrado accidental** | Confirmación + **papelera** con restauración + purga automática configurable |
+| **Pérdida de datos al actualizar** | Antes de migrar el esquema se guarda un **respaldo** automático (`CANCIONES.respaldo-antes-de-vN.db`) |
+| **Archivos descargados** | Los modelos de voz se descargan solo por **HTTPS** desde direcciones fijas. Al descomprimir se verifica que ningún archivo quede **fuera de la carpeta destino** (protección contra *zip slip*), con su prueba |
+| **Privacidad del audio** | El reconocimiento de voz es **local**: Vosk y Whisper corren en el equipo y el audio nunca sale de él. En Android se pide únicamente el permiso de micrófono |
+| **Fallos inesperados** | El menú atrapa cualquier excepción y la muestra sin cerrar el programa; la sesión abierta se cierra bien al volver a abrir |
+
+## 15. Escalabilidad y versiones futuras
+
+- **Capas independientes.** El núcleo (`db`, `buscador`, `seguimiento`, `automatico`) no conoce la interfaz. La consola de Windows, la app de Android y la herramienta sin pantalla lo reutilizan tal cual; una versión web (Vercel) o de escritorio gráfica usaría el mismo núcleo.
+- **Migraciones de esquema.** `METADATOS.version_esquema` y `BaseDatos._migrar()` actualizan solas las bases de versiones anteriores (v1 → v2 agregó la papelera), con respaldo previo. Cada versión nueva agrega su paso.
+- **Motores de voz intercambiables.** Todos los motores (`Vosk`, `Whisper`, `Simulado` y el reconocedor de Android) cumplen la misma interfaz (`procesar` → `Transcripcion`). Agregar otro, como un servicio en la nube o un modelo nuevo, no toca el resto del programa.
+- **Configuración externa.** Todos los umbrales y tiempos están en `karaoke.ini`; ajustar el comportamiento no requiere recompilar.
+- **Volumen de canciones.** El buscador mantiene un índice invertido en memoria y solo alinea las canciones candidatas (como máximo 60). Es instantáneo con cientos o algunos miles de canciones. Para decenas de miles, el siguiente paso es prefiltrar con **SQLite FTS5**, que ya viene en Python, antes del alineamiento.
+- **Calidad continua.** 147 pruebas automáticas en Windows y Linux en cada cambio, más la prueba de punta a punta con audio real y la construcción y prueba del ejecutable.
 
 ---
 
