@@ -8,6 +8,7 @@ from pathlib import Path
 
 from kivy.app import App
 from kivy.core.window import Window
+from kivy.logger import Logger
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -96,13 +97,14 @@ class KaraokeApp(App):
 
         for modulo, clases in (
             ("programa", ("ProgramaPantalla",)),
-            ("mas", ("MasPantalla",)),
+            ("mas", ("MasPantalla", "Historial", "Papelera", "Ajustes", "AcercaDe")),
             ("editor", ("EditorCancion", "NuevaCancion", "Importar")),
             ("escenario", ("BuscarCancion", "Escenario")),
         ):
             try:
                 paquete = importlib.import_module(f"app.pantallas.{modulo}")
-            except ImportError:
+            except ImportError as ex:
+                Logger.warning(f"Karaoke: no se cargó la pantalla {modulo}: {ex}")
                 continue
             for nombre in clases:
                 clase = getattr(paquete, nombre)

@@ -91,6 +91,7 @@ CURVA = "out_cubic"
 
 # ----------------------------------------------------------------- íconos
 ICONO = {
+    "minus": "\U000F0374",
     "account-music": "\U000F0803",
     "alert-circle-outline": "\U000F05D6",
     "arrow-left": "\U000F004D",
