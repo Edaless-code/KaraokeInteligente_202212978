@@ -26,26 +26,31 @@ def color(valor: str, alfa: float | None = None) -> list[float]:
 
 
 # ------------------------------------------------------------------ colores
-FONDO = color("#0A0A10")          # escenario
-SUPERFICIE = color("#15151E")     # tarjetas
-SUPERFICIE_ALTA = color("#1D1D29")  # tarjetas elevadas, campos
-TRAZO = color("#FFFFFF", 0.07)    # bordes sutiles
-VELO = color("#000000", 0.55)     # oscurece al mostrar un diálogo
+# Paleta fría y mate: azules profundos que transmiten orden y calma. Los
+# colores de relleno (botones) van apagados; los de texto e íconos son una
+# versión más clara del mismo tono para mantener el contraste (WCAG ≥ 4.5:1).
+FONDO = color("#0B1220")            # azul noche: el escenario
+SUPERFICIE = color("#121B2E")       # tarjetas
+SUPERFICIE_ALTA = color("#1A2540")  # tarjetas elevadas, campos
+TRAZO = color("#94A3B8", 0.10)      # bordes sutiles (pizarra)
+VELO = color("#05080F", 0.62)       # oscurece al mostrar un diálogo
 
-TEXTO = color("#F5F5F7")
-TEXTO_2 = color("#A6A6B3")
-TEXTO_3 = color("#6E6E7C")
+TEXTO = color("#E6EAF2")            # 15.5:1 sobre el fondo
+TEXTO_2 = color("#9AA6BD")          # 7.0:1
+TEXTO_3 = color("#6B7790")          # rótulos secundarios
 
-ACENTO = color("#FF5A5F")         # coral: identidad de la app
-ACENTO_SUAVE = color("#FF5A5F", 0.14)
-VIOLETA = color("#8B7CFF")        # acento secundario (modo automático)
-VIOLETA_SUAVE = color("#8B7CFF", 0.16)
-EXITO = color("#34D399")
-EXITO_SUAVE = color("#34D399", 0.15)
-AVISO = color("#FBBF24")
-AVISO_SUAVE = color("#FBBF24", 0.15)
-PELIGRO = color("#F87171")
-PELIGRO_SUAVE = color("#F87171", 0.15)
+ACENTO = color("#3E5F94")           # azul acero mate: botón principal
+ACENTO_TEXTO = color("#8FAEE0")     # el mismo azul, legible como texto (7.6:1)
+ACENTO_SUAVE = color("#5B7FC0", 0.14)
+SECUNDARIO = color("#3D7478")       # verde azulado mate: modo automático
+SECUNDARIO_TEXTO = color("#7FB8BC")
+SECUNDARIO_SUAVE = color("#5FA3A8", 0.14)
+EXITO = color("#7DBFA6")
+EXITO_SUAVE = color("#7DBFA6", 0.13)
+AVISO = color("#D6B878")
+AVISO_SUAVE = color("#D6B878", 0.12)
+PELIGRO = color("#D98A8A")
+PELIGRO_SUAVE = color("#D98A8A", 0.13)
 
 # --------------------------------------------------------------- tipografía
 FUENTE = "Inter"

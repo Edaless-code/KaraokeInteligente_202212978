@@ -133,7 +133,7 @@ KV = """
     font_size: sp(16)
     foreground_color: T.TEXTO
     hint_text_color: T.TEXTO_3
-    cursor_color: T.ACENTO
+    cursor_color: T.ACENTO_TEXTO
     selection_color: T.ACENTO_SUAVE
     background_normal: ""
     background_active: ""
@@ -150,7 +150,7 @@ KV = """
             size: self.size
             radius: [T.RADIO_CAMPO]
         Color:
-            rgba: T.ACENTO if self.focus else T.TRAZO
+            rgba: T.ACENTO_TEXTO if self.focus else T.TRAZO
         Line:
             rounded_rectangle: (self.x, self.y, self.width, self.height, T.RADIO_CAMPO)
             width: 1.3 if self.focus else 1
@@ -266,13 +266,13 @@ KV = """
     Icono:
         nombre: root.icono
         tamano: dp(24)
-        tono: T.ACENTO if root.activa else T.TEXTO_3
+        tono: T.ACENTO_TEXTO if root.activa else T.TEXTO_3
         pos_hint: {"center_x": .5}
     Label:
         text: root.texto
         font_name: T.FUENTE_SEMI
         font_size: sp(11)
-        color: T.ACENTO if root.activa else T.TEXTO_3
+        color: T.ACENTO_TEXTO if root.activa else T.TEXTO_3
         size_hint_y: None
         height: dp(16)
 
@@ -293,8 +293,8 @@ KV = """
 
 <Dialogo>:
     background: ""
-    background_color: T.VELO
-    overlay_color: 0, 0, 0, 0
+    background_color: 0, 0, 0, 0
+    overlay_color: T.VELO
     size_hint: None, None
     width: min(dp(360), root.parent.width - dp(40)) if root.parent else dp(320)
     height: caja.minimum_height
@@ -417,17 +417,17 @@ class _Presionable(ButtonBehavior):
 class Boton(_Presionable, BoxLayout):
     texto = StringProperty("")
     icono = StringProperty("")
-    estilo = OptionProperty("primario", options=["primario", "secundario", "fantasma", "peligro", "violeta"])
+    estilo = OptionProperty("primario", options=["primario", "secundario", "fantasma", "peligro", "automatico"])
     radio = NumericProperty(T.RADIO_BOTON)
     _tinta = ColorProperty(T.TEXTO)
 
     _FONDOS = {
         "primario": T.ACENTO, "secundario": T.SUPERFICIE_ALTA, "fantasma": (0, 0, 0, 0),
-        "peligro": T.PELIGRO_SUAVE, "violeta": T.VIOLETA,
+        "peligro": T.PELIGRO_SUAVE, "automatico": T.SECUNDARIO,
     }
     _TINTAS = {
-        "primario": T.color("#FFFFFF"), "secundario": T.TEXTO, "fantasma": T.ACENTO,
-        "peligro": T.PELIGRO, "violeta": T.color("#FFFFFF"),
+        "primario": T.color("#F3F6FC"), "secundario": T.TEXTO, "fantasma": T.ACENTO_TEXTO,
+        "peligro": T.PELIGRO, "automatico": T.color("#F3F6FC"),
     }
 
     def _fondo_base(self):
@@ -470,7 +470,7 @@ class FilaCancion(ButtonBehavior, BoxLayout):
     subtitulo = StringProperty("")
     icono_derecho = StringProperty("chevron-right")
     color_insignia = ColorProperty(T.ACENTO_SUAVE)
-    color_texto_insignia = ColorProperty(T.ACENTO)
+    color_texto_insignia = ColorProperty(T.ACENTO_TEXTO)
     dato = ObjectProperty(None, allownone=True)
 
 
@@ -509,7 +509,7 @@ class Dialogo(ModalView):
     titulo = StringProperty("")
     mensaje = StringProperty("")
     icono = StringProperty("")
-    tono = ColorProperty(T.ACENTO)
+    tono = ColorProperty(T.ACENTO_TEXTO)
 
     def agregar_boton(self, texto: str, estilo: str = "secundario", accion=None) -> Boton:
         boton = Boton(texto=texto, estilo=estilo)
@@ -529,7 +529,7 @@ def confirmar(titulo: str, mensaje: str, texto_si: str, accion, peligro: bool = 
     """Diálogo de confirmación: la acción destructiva en rojo y "Cancelar"
     siempre disponible (se puede cerrar tocando fuera)."""
     dialogo = Dialogo(titulo=titulo, mensaje=mensaje, icono=icono,
-                      tono=T.PELIGRO if peligro else T.ACENTO)
+                      tono=T.PELIGRO if peligro else T.ACENTO_TEXTO)
     dialogo.agregar_boton(texto_si, "peligro" if peligro else "primario", accion)
     dialogo.agregar_boton("Cancelar", "fantasma")
     dialogo.open()
@@ -546,7 +546,7 @@ class Aviso(FloatLayout):
 
     def mostrar(self, texto: str, tipo: str = "exito", segundos: float = 2.4) -> None:
         estilos = {"exito": ("check-circle", T.EXITO), "error": ("alert-circle-outline", T.PELIGRO),
-                   "info": ("information-outline", T.VIOLETA)}
+                   "info": ("information-outline", T.ACENTO_TEXTO)}
         self.icono, self.tono = estilos.get(tipo, estilos["info"])
         self.texto = texto
         Animation.cancel_all(self)

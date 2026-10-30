@@ -28,7 +28,7 @@ Builder.load_string("""
             BotonIcono:
                 icono: "plus"
                 fondo: T.ACENTO
-                tinta: 1, 1, 1, 1
+                tinta: T.color("#F3F6FC")
                 lado: dp(44)
                 pos_hint: {"center_y": .35}
                 on_release: app.abrir("importar")
@@ -110,7 +110,7 @@ Builder.load_string("""
                 height: self.minimum_height
                 Texto:
                     tipo: "mini"
-                    tono: T.ACENTO
+                    tono: T.ACENTO_TEXTO
                     text: root.antetitulo
                 Texto:
                     tipo: "titulo_grande"

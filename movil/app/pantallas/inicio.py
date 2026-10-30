@@ -15,7 +15,7 @@ class TarjetaModo(ButtonBehavior, BoxLayout):
     icono = StringProperty("")
     titulo = StringProperty("")
     descripcion = StringProperty("")
-    acento = ColorProperty(T.ACENTO)
+    acento = ColorProperty(T.ACENTO_TEXTO)
     acento_suave = ColorProperty(T.ACENTO_SUAVE)
 
 Builder.load_string("""
@@ -109,7 +109,7 @@ Builder.load_string("""
                 borde: False
                 Texto:
                     tipo: "mini"
-                    tono: T.ACENTO
+                    tono: T.ACENTO_TEXTO
                     text: "SIGUIENTE EN EL PROGRAMA"
                 Texto:
                     tipo: "titulo"
@@ -134,8 +134,8 @@ Builder.load_string("""
                 icono: "waveform"
                 titulo: "Modo automático"
                 descripcion: "La IA escucha al cantante, reconoce la canción y la sigue."
-                acento: T.VIOLETA
-                acento_suave: T.VIOLETA_SUAVE
+                acento: T.SECUNDARIO_TEXTO
+                acento_suave: T.SECUNDARIO_SUAVE
                 on_release: app.abrir("escenario", modo="automatico")
 
             Tarjeta:

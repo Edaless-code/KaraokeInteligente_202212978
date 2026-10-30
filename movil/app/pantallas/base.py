@@ -56,7 +56,7 @@ Builder.load_string("""
     spacing: T.ESP["xs"]
     Texto:
         tipo: "mini"
-        tono: T.ACENTO
+        tono: T.ACENTO_TEXTO
         text: root.antetitulo_mayusculas
     Texto:
         tipo: "titulo_grande"
