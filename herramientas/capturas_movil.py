@@ -39,9 +39,10 @@ class Capturador(KaraokeApp):
             return
         paso = PASOS[indice]
         nombre, _, codigo = paso.partition(":")
+        nombre, _, espera = nombre.partition("@")  # "nombre@25" espera 25 s antes de capturar
         if codigo:
             exec(codigo, {"app": self})
-        Clock.schedule_once(lambda *_: self.capturar(nombre, indice), 1.0)
+        Clock.schedule_once(lambda *_: self.capturar(nombre, indice), float(espera or 1.0))
 
     def capturar(self, nombre, indice):
         Window.screenshot(name=str(SALIDA / f"{indice:02d}_{nombre}.png"))

@@ -18,7 +18,7 @@ from . import tema as T
 
 T.registrar_fuentes()
 
-from . import componentes  # noqa: E402,F401  (registra los estilos)
+from . import componentes  # noqa: E402,F401 -- registra los estilos
 from .componentes import Aviso, BarraPestanas  # noqa: E402
 
 PESTANAS = [
