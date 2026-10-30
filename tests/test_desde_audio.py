@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from karaoke.audio import desde_audio
-from karaoke.audio.desde_audio import (buscar_audios, crear_borrador, guardar_pista, lineas_desde_frases,
+from karaoke.audio.desde_audio import (Palabra, buscar_audios, frases_por_pausas, crear_borrador, guardar_pista, lineas_desde_frases,
                                        nombre_desde_archivo, nombre_seguro)
 from karaoke.config import cargar_config
 from karaoke.db import BaseDatos
@@ -49,6 +49,23 @@ def test_lineas_desde_frases():
     assert lineas[-1] == "you b****"
 
 
+def test_lineas_por_pausas_y_mayusculas():
+    def palabras(texto, inicio):
+        return [Palabra(p, inicio + i * 0.3, inicio + i * 0.3 + 0.25) for i, p in enumerate(texto.split())]
+
+    # Whisper junta dos versos en un segmento; el segundo empieza con mayúscula.
+    entrada = (palabras("I am afraid to fall in love again", 10.0)
+               + palabras("But it's hard to resist", 12.5)   # sin pausa larga
+               + palabras("seems that you follow me", 17.0))  # después de una pausa
+    assert frases_por_pausas(entrada) == [
+        ("I am afraid to fall in love again", 10.0),
+        ("But it's hard to resist", 12.5),
+        ("seems that you follow me", 17.0),
+    ]
+    # "I" con mayúscula no parte el verso.
+    assert len(frases_por_pausas(palabras("and everything I do I feel", 0.0))) == 1
+
+
 def test_buscar_audios_en_una_carpeta(tmp_path):
     for nombre in ("b.mp3", "a.WAV", "notas.txt", "c.flac"):
         (tmp_path / nombre).write_bytes(b"")
@@ -84,10 +101,15 @@ def test_crear_borrador_con_la_ia(tmp_path, monkeypatch):
     escribir_wav(archivo, segundos=2.0)
     vistos = {}
 
-    def falso(muestras, config, idioma, progreso):
+    def falso(muestras, config, idioma, progreso, modelo=None):
         vistos["segundos"] = len(muestras) / 16000
         progreso(1.0)
-        return ["La lluvia cae sobre la ciudad dormida", "y las farolas cuentan historias de papel"], "es"
+        texto = "La lluvia cae sobre la ciudad dormida y las farolas cuentan historias de papel"
+        palabras = []
+        for i, p in enumerate(texto.split()):
+            inicio = i * 0.4 + (1.0 if i >= 7 else 0.0)  # pausa de 1 s antes de "y las farolas"
+            palabras.append(Palabra(p, inicio, inicio + 0.3))
+        return palabras, "es", "Whisper small"
 
     monkeypatch.setattr(desde_audio, "_con_whisper", falso)
     monkeypatch.setattr("karaoke.audio.proceso.whisper_disponible", lambda: True)
@@ -95,6 +117,7 @@ def test_crear_borrador_con_la_ia(tmp_path, monkeypatch):
     assert borrador.nombre == "Lluvia de papel"
     assert borrador.lineas == ["La lluvia cae sobre la ciudad dormida", "y las farolas cuentan historias de papel"]
     assert borrador.idioma == "es"
+    assert borrador.tiempos == [0.0, pytest.approx(3.8)]
     assert vistos["segundos"] == pytest.approx(2.0, abs=0.05)
 
 

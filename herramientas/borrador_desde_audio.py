@@ -27,16 +27,20 @@ def main() -> int:
     parser.add_argument("--idioma", default=None, choices=["es", "en"])
     parser.add_argument("--canciones", default="ejemplos/canciones.txt")
     parser.add_argument("--carpeta", default=".")
+    parser.add_argument("--modelo", default=None, help="tiny, base, small, medium… (por omisión el de karaoke.ini)")
+    parser.add_argument("--sin-aislar", action="store_true", help="no realzar la voz del centro")
     opciones = parser.parse_args()
 
     config = cargar_config(Path(opciones.carpeta), crear=False)
     inicio = time.monotonic()
-    borrador = crear_borrador(Path(opciones.audio), config, opciones.idioma)
+    borrador = crear_borrador(Path(opciones.audio), config, opciones.idioma, modelo=opciones.modelo,
+                              aislar=not opciones.sin_aislar)
     segundos = time.monotonic() - inicio
     print(f"Nombre sugerido: {borrador.nombre} · idioma {borrador.idioma} · {borrador.motor} · "
           f"{len(borrador.lineas)} líneas · {borrador.duracion:.0f} s de audio en {segundos:.0f} s")
-    for numero, linea in enumerate(borrador.lineas, 1):
-        print(f"{numero:>3}. {linea}")
+    for numero, (linea, tiempo) in enumerate(zip(borrador.lineas, borrador.tiempos), 1):
+        marca = f"{int(tiempo // 60)}:{tiempo % 60:04.1f}" if tiempo is not None else "     "
+        print(f"{numero:>3}. [{marca}] {linea}")
 
     referencia = None
     for nombre, lineas in analizar_texto(leer_texto(opciones.canciones)):

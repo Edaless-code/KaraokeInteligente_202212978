@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import shutil
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +40,15 @@ class Borrador:
     idioma: str
     duracion: float
     motor: str
+    # Segundo en que empieza cada línea en la pista (None si no se sabe).
+    tiempos: list[float | None] = field(default_factory=list)
+
+
+@dataclass
+class Palabra:
+    texto: str
+    inicio: float
+    fin: float
 
 
 def buscar_audios(ruta: Path) -> list[Path]:
@@ -68,57 +77,123 @@ def nombre_seguro(texto: str) -> str:
     return limpio[:80] or "pista"
 
 
-def lineas_desde_frases(frases: list[str], maximo: int, ocultar_groserias: bool = True) -> list[str]:
-    """Convierte las frases de la IA en líneas de la letra.
+_SIMBOLOS = re.compile(r"[^\w\s'’,.!?¿¡-]")
+# Palabras que en inglés van con mayúscula a mitad de una frase.
+_MAYUSCULA_NORMAL = {"i", "i'm", "i'll", "i've", "i'd", "god", "oh"}
 
-    * descarta lo que Whisper "inventa" en la música ("Music", "♪");
+
+def frases_por_pausas(palabras: list[Palabra], pausa: float = 0.55, maximo: int = 80) -> list[tuple[str, float]]:
+    """Agrupa las palabras con tiempo en líneas cantadas: una línea termina
+    cuando el cantante hace una pausa, cuando termina una oración o cuando
+    la siguiente palabra empieza con mayúscula (así escribe Whisper el inicio
+    de un verso). Devuelve (texto, segundo de inicio)."""
+    frases: list[tuple[str, float]] = []
+    actual: list[Palabra] = []
+
+    def cerrar() -> None:
+        if actual:
+            frases.append((" ".join(p.texto for p in actual), actual[0].inicio))
+            actual.clear()
+
+    for palabra in palabras:
+        texto = palabra.texto.strip()
+        if not texto:
+            continue
+        if actual:
+            anterior = actual[-1]
+            limpio = texto.strip("¿¡\"'(").lower()
+            nuevo_verso = (texto[:1].isupper() and limpio not in _MAYUSCULA_NORMAL and len(actual) >= 3)
+            largo = len(" ".join(p.texto for p in actual)) + 1 + len(texto) > maximo
+            if (palabra.inicio - anterior.fin >= pausa or anterior.texto.rstrip().endswith((".", "?", "!"))
+                    or nuevo_verso or largo):
+                cerrar()
+        actual.append(Palabra(texto, palabra.inicio, palabra.fin))
+    cerrar()
+    return frases
+
+
+def lineas_con_tiempo(frases: list[tuple[str, float | None]], maximo: int,
+                      ocultar_groserias: bool = True) -> list[tuple[str, float | None]]:
+    """Convierte las frases de la IA en líneas de la letra (con su tiempo).
+
+    * descarta lo que Whisper "inventa" en la música ("Music", "♪", emojis);
     * separa las oraciones (". ", "? ", "! ") y divide lo que pase de ``maximo``;
     * corta los bucles de la IA: una misma línea más de 3 veces seguidas
       (en una letra real casi nunca pasa).
     """
-    lineas: list[str] = []
-    for frase in frases:
-        frase = " ".join(frase.replace("♪", " ").split())
+    lineas: list[tuple[str, float | None]] = []
+    for frase, tiempo in frases:
+        frase = " ".join(_SIMBOLOS.sub(" ", frase).split())
         if not frase or es_alucinacion(frase):
             continue
-        for oracion in re.split(r"(?<=[.!?¿¡])\s+", frase):
-            oracion = oracion.strip(" .")
+        for oracion in re.split(r"(?<=[.!?])\s+", frase):
+            oracion = oracion.strip(" .,")
             if not oracion:
                 continue
             if ocultar_groserias:
                 oracion = censurar(oracion)
             for parte in ajustar_linea(oracion, maximo, "dividir"):
-                if len(lineas) >= 3 and all(l.lower() == parte.lower() for l in lineas[-3:]):
+                if len(lineas) >= 3 and all(l.lower() == parte.lower() for l, _ in lineas[-3:]):
                     continue
-                lineas.append(parte)
+                lineas.append((parte, tiempo))
+                tiempo = None  # solo la primera parte conoce su inicio exacto
     return lineas
 
 
-def leer_voz(ruta: Path) -> np.ndarray:
-    """La pista en mono a 16 kHz con la voz del centro realzada."""
+def lineas_desde_frases(frases: list[str], maximo: int, ocultar_groserias: bool = True) -> list[str]:
+    """Igual que ``lineas_con_tiempo`` para frases sin tiempo."""
+    return [l for l, _ in lineas_con_tiempo([(f, None) for f in frases], maximo, ocultar_groserias)]
+
+
+def leer_voz(ruta: Path, aislar: bool = True) -> np.ndarray:
+    """La pista en mono a 16 kHz (con la voz del centro realzada)."""
     estereo = leer_archivo_audio(ruta, FRECUENCIA, canales=2)
     if len(estereo) > MAX_SEGUNDOS * FRECUENCIA:
         raise ErrorAudio(f"El audio dura más de {MAX_SEGUNDOS // 60} minutos; no parece una canción.")
-    return aislar_voz_estereo(estereo).astype(np.float32)
+    if aislar:
+        return aislar_voz_estereo(estereo).astype(np.float32)
+    return estereo.mean(axis=1).astype(np.float32)
 
 
-def _con_whisper(muestras: np.ndarray, config: Config, idioma: str | None,
-                 progreso: Progreso | None) -> tuple[list[str], str]:
+def cargar_whisper_letras(config: Config, modelo: str | None = None):
+    """El modelo grande para letras; si no se puede, el de tiempo real."""
     from .motores import MotorWhisper
     from .proceso import modelo_whisper
 
-    motor = MotorWhisper(modelo_whisper(config), idioma or "auto", FRECUENCIA, sincrono=True)
+    candidatos = []
+    if modelo:
+        candidatos.append(modelo)
+    else:
+        carpeta = config.ruta("audio", "carpeta_whisper_letras")
+        candidatos.append(str(carpeta) if (carpeta / "model.bin").exists()
+                          else config.texto("audio", "modelo_whisper_letras"))
+    candidatos.append(modelo_whisper(config))
+    error = None
+    for candidato in candidatos:
+        try:
+            return MotorWhisper(candidato, "auto", FRECUENCIA, sincrono=True), Path(candidato).name
+        except ErrorMotor as ex:
+            error = ex
+    raise error
+
+
+def _con_whisper(muestras: np.ndarray, config: Config, idioma: str | None,
+                 progreso: Progreso | None, modelo: str | None = None) -> tuple[list[Palabra], str, str]:
+    motor, nombre = cargar_whisper_letras(config, modelo)
     segmentos, informacion = motor.modelo.transcribe(
         muestras, language=idioma, beam_size=5, vad_filter=False,
-        condition_on_previous_text=False,
+        condition_on_previous_text=False, word_timestamps=True,
     )
     duracion = max(len(muestras) / FRECUENCIA, 0.1)
-    frases = []
+    palabras: list[Palabra] = []
     for segmento in segmentos:
-        frases.append(segmento.text)
+        if es_alucinacion(segmento.text):
+            continue
+        for palabra in segmento.words or []:
+            palabras.append(Palabra(palabra.word.strip(), palabra.start, palabra.end))
         if progreso:
             progreso(min(1.0, segmento.end / duracion))
-    return frases, informacion.language or idioma or "es"
+    return palabras, informacion.language or idioma or "es", f"Whisper {nombre}"
 
 
 def _con_vosk(muestras: np.ndarray, config: Config, idioma: str | None,
@@ -146,23 +221,26 @@ def _con_vosk(muestras: np.ndarray, config: Config, idioma: str | None,
 
 
 def crear_borrador(ruta: Path, config: Config, idioma: str | None = None,
-                   progreso: Progreso | None = None) -> Borrador:
+                   progreso: Progreso | None = None, modelo: str | None = None,
+                   aislar: bool = True) -> Borrador:
     """Transcribe ``ruta`` y devuelve el borrador de la canción."""
     from .proceso import whisper_disponible
 
-    muestras = leer_voz(ruta)
+    muestras = leer_voz(ruta, aislar)
     if whisper_disponible():
-        frases, idioma_final = _con_whisper(muestras, config, idioma, progreso)
-        motor = "Whisper"
+        palabras, idioma_final, motor = _con_whisper(muestras, config, idioma, progreso, modelo)
+        frases = frases_por_pausas(palabras, config.decimal("audio", "pausa_entre_lineas"),
+                                   config.caracteres_por_linea)
     else:
-        frases, idioma_final = _con_vosk(muestras, config, idioma, progreso)
-        motor = "Vosk"
-    lineas = lineas_desde_frases(frases, config.caracteres_por_linea,
-                                 config.booleano("automatico", "censurar_transcripcion"))
+        textos, idioma_final = _con_vosk(muestras, config, idioma, progreso)
+        frases, motor = [(t, None) for t in textos], "Vosk"
+    pares = lineas_con_tiempo(frases, config.caracteres_por_linea,
+                              config.booleano("automatico", "censurar_transcripcion"))
+    lineas = [l for l, _ in pares]
     if idioma_final not in ("es", "en") and lineas:
         idioma_final = detectar_idioma(lineas)
     return Borrador(ruta, nombre_desde_archivo(ruta), lineas, idioma_final,
-                    len(muestras) / FRECUENCIA, motor)
+                    len(muestras) / FRECUENCIA, motor, [t for _, t in pares])
 
 
 def guardar_pista(ruta: Path, config: Config, codigo: int, nombre: str) -> str:

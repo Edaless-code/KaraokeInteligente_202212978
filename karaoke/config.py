@@ -74,6 +74,13 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         # "carpeta_whisper" se usa sin internet; si no, se descarga la primera vez.
         "modelo_whisper": "base",
         "carpeta_whisper": "modelo/whisper-base",
+        # Para escribir la letra de una pista completa (f → m) no hace falta
+        # tiempo real: se usa un modelo más grande y preciso. Si no está en su
+        # carpeta ni hay internet para descargarlo, se usa el de arriba.
+        "modelo_whisper_letras": "small",
+        "carpeta_whisper_letras": "modelo/whisper-small",
+        # Una pausa del cantante de al menos estos segundos empieza otra línea.
+        "pausa_entre_lineas": "0.55",
         "idioma": "es",
         "frecuencia_muestreo": "16000",
         # Índice o nombre del micrófono; vacío = micrófono predeterminado.
