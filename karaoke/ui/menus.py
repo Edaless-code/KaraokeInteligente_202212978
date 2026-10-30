@@ -26,6 +26,7 @@ from ..programa import cargar_programa, leer_programa
 from ..texto import ajustar_linea
 from . import consola
 from .consola import Teclado, color
+from .desde_audio import AgregarDesdeAudio
 from .pantalla import paginar
 
 # Menú principal agrupado por tareas: (sección, [(tecla, opción, explicación)]).
@@ -354,6 +355,7 @@ class Aplicacion:
             consola.titulo("Modo alimentación")
             print("  (t) Leer canciones de un archivo de texto plano")
             print("  (e) Escribir una canción en pantalla (campo por campo)")
+            print("  (m) Agregar canciones desde archivos de audio (MP3, WAV, FLAC u OGG)")
             temporales = len(self.bd.listar_temporales())
             print(f"  (v) Revisar canciones aprendidas por el modo automático ({temporales})")
             print("  (r) Regresar")
@@ -362,6 +364,8 @@ class Aplicacion:
                 self.alimentar_archivo()
             elif opcion == "e":
                 self.alimentar_manual()
+            elif opcion == "m":
+                AgregarDesdeAudio(self).ejecutar()
             elif opcion == "v":
                 self.revisar_temporales()
             elif opcion in ("r", "q", ""):

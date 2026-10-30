@@ -39,6 +39,13 @@ def whisper_disponible() -> bool:
     return True
 
 
+def modelo_whisper(config: Config) -> str:
+    """El modelo de Whisper incluido en la carpeta del programa o, si no está,
+    el nombre del modelo (faster-whisper lo descarga la primera vez)."""
+    carpeta = config.ruta("audio", "carpeta_whisper")
+    return str(carpeta) if (carpeta / "model.bin").exists() else config.texto("audio", "modelo_whisper")
+
+
 def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) -> tuple[list[Motor], list[str]]:
     """Crea los motores según ``[audio] motor`` (hibrido | vosk | whisper).
 
@@ -62,9 +69,7 @@ def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) ->
     if eleccion in ("hibrido", "híbrido", "whisper"):
         if whisper_disponible():
             try:
-                carpeta = config.ruta("audio", "carpeta_whisper")
-                modelo = str(carpeta) if (carpeta / "model.bin").exists() else config.texto("audio", "modelo_whisper")
-                motores.append(MotorWhisper(modelo, "auto",
+                motores.append(MotorWhisper(modelo_whisper(config), "auto",
                                             config.entero("audio", "frecuencia_muestreo"),
                                             sincrono=sincrono))
             except ErrorMotor as ex:

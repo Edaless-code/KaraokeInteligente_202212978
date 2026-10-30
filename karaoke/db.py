@@ -33,7 +33,7 @@ from pathlib import Path
 
 from .texto import detectar_idioma, normalizar, semejanza
 
-VERSION_ESQUEMA = 2
+VERSION_ESQUEMA = 3
 
 # Límites de seguridad (protegen la memoria y la base de datos de entradas
 # anómalas). La longitud "normal" de una línea se configura en karaoke.ini.
@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS TEMP_LETRAS (
     numero_linea        INTEGER NOT NULL,
     linea               TEXT    NOT NULL,
     confianza           REAL    NOT NULL DEFAULT 1.0
+);
+
+-- Pista de audio de cada canción (versión 3): se agrega desde un MP3/WAV y
+-- se ofrece en el modo automático. La ruta es relativa a la carpeta del programa.
+CREATE TABLE IF NOT EXISTS PISTAS (
+    codigo              INTEGER PRIMARY KEY REFERENCES NOMBRES(codigo) ON DELETE CASCADE,
+    archivo             TEXT    NOT NULL,
+    fecha_registro      TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS PROGRAMA (
@@ -528,6 +536,22 @@ class BaseDatos:
         self.conexion.commit()
 
     # --------------------------------------------------------------- programa
+    # ------------------------------------------------------------ pistas
+    def guardar_pista(self, codigo: int, archivo: str) -> None:
+        with self._transaccion() as c:
+            c.execute("INSERT OR REPLACE INTO PISTAS(codigo, archivo, fecha_registro) VALUES (?, ?, ?)",
+                      (codigo, limpiar_texto(archivo, 500), _ahora()))
+
+    def obtener_pista(self, codigo: int) -> str | None:
+        fila = self.conexion.execute("SELECT archivo FROM PISTAS WHERE codigo = ?", (codigo,)).fetchone()
+        return fila[0] if fila else None
+
+    def listar_pistas(self) -> list[tuple[int, str, str]]:
+        """(código, nombre, archivo) de las canciones con pista (sin la papelera)."""
+        return [tuple(f) for f in self.conexion.execute(
+            "SELECT n.codigo, n.nombre_cancion, p.archivo FROM PISTAS p "
+            "JOIN NOMBRES n ON n.codigo = p.codigo WHERE n.eliminada_en IS NULL ORDER BY n.codigo")]
+
     def guardar_programa(self, entradas: list[tuple[str, int | None]]) -> None:
         with self._transaccion() as c:
             c.execute("DELETE FROM PROGRAMA")

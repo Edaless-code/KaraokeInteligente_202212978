@@ -17,6 +17,7 @@ f finalizar.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..audio.fuentes import ErrorAudio, FuenteArchivo, FuenteAudio, FuenteMicrofono
@@ -69,9 +70,9 @@ class ModoAutomatico:
         if opcion == "m":
             return FuenteMicrofono(frecuencia, self.config.texto("audio", "dispositivo"))
         if opcion == "a":
-            ejemplo = self.config.carpeta / "ejemplos" / "Sound_of_You.mp3"
-            texto = self.app.preguntar(f"Ruta del archivo [{ejemplo}]: ")
-            ruta = ruta_relativa(self.config, texto) if texto else ejemplo
+            ruta = self.elegir_pista()
+            if ruta is None:
+                return None
             if not ruta.exists():
                 consola.error(f"No existe el archivo {ruta}")
                 self.teclado.pausa()
@@ -84,6 +85,33 @@ class ModoAutomatico:
                                  retardo_reproduccion=self.config.decimal("automatico",
                                                                           "segundos_analisis_adelantado"))
         return None
+
+    def pistas_disponibles(self) -> list[tuple[str, Path]]:
+        """Pistas de la biblioteca (f → m) y audios de la carpeta de ejemplos."""
+        pistas = [(f"[{codigo}] {nombre}", self.config.carpeta / archivo)
+                  for codigo, nombre, archivo in self.bd.listar_pistas()]
+        vistas = {ruta.resolve() for _, ruta in pistas}
+        ejemplos = self.config.carpeta / "ejemplos"
+        if ejemplos.is_dir():
+            for ruta in sorted(ejemplos.iterdir()):
+                if ruta.suffix.lower() in (".mp3", ".wav", ".flac", ".ogg") and ruta.resolve() not in vistas:
+                    pistas.append((f"{ruta.name} (ejemplo)", ruta))
+        return [(texto, ruta) for texto, ruta in pistas if ruta.exists()]
+
+    def elegir_pista(self) -> Path | None:
+        pistas = self.pistas_disponibles()
+        if pistas:
+            print()
+            for numero, (texto, _) in enumerate(pistas, 1):
+                print(f"    {color(str(numero), 'negrita', 'cian'):>4}  {texto}")
+            print(color("  Para agregar más pistas use f → m.", "tenue"))
+        texto = self.app.preguntar("  Número de la pista o ruta de un archivo [1]: " if pistas
+                                   else "  Ruta del archivo de audio: ").strip().strip('"')
+        if not texto and pistas:
+            return pistas[0][1]
+        if texto.isdigit() and 1 <= int(texto) <= len(pistas):
+            return pistas[int(texto) - 1][1]
+        return ruta_relativa(self.config, texto) if texto else None
 
     def revisar_modelos(self, idiomas: list[str]) -> None:
         """Ofrece descargar los modelos de Vosk que falten."""
