@@ -12,7 +12,14 @@ from PyInstaller.utils.hooks import (collect_all, collect_data_files, collect_dy
 datas = [("movil/recursos", "recursos")]
 binaries = collect_dynamic_libs("sounddevice")
 datas += collect_data_files("_sounddevice_data")
-ocultos = collect_submodules("karaoke") + collect_submodules("app")
+# Los módulos de la app se nombran sin importarlos: importarlos crea la ventana
+# de Kivy y en un servidor sin OpenGL Windows muestra un aviso que espera un
+# clic (el empaquetado se queda colgado).
+ocultos = collect_submodules("karaoke") + [
+    "app", "app.aplicacion", "app.componentes", "app.tema", "app.voz", "app.reproduccion",
+    "app.pantallas", "app.pantallas.base", "app.pantallas.inicio", "app.pantallas.biblioteca",
+    "app.pantallas.programa", "app.pantallas.mas", "app.pantallas.editor", "app.pantallas.escenario",
+]
 for paquete in ("faster_whisper", "ctranslate2"):
     d, b, h = collect_all(paquete)
     datas += d

@@ -50,6 +50,9 @@ jobs:
           main.py
 
       - name: Construir la versión de escritorio (interfaz gráfica)
+        # Si fallara, el ZIP sale igual con la versión de consola (la de la entrega).
+        continue-on-error: true
+        timeout-minutes: 15
         run: |
           pyinstaller --noconfirm --clean --distpath dist-escritorio escritorio.spec
           Copy-Item "dist-escritorio/KaraokeEscritorio/KaraokeEscritorio.exe" "$env:DESTINO/"
@@ -110,6 +113,7 @@ jobs:
       - name: "Prueba 3: la versión de escritorio abre su ventana"
         continue-on-error: true   # el servidor de GitHub puede no tener OpenGL
         run: |
+          if (-not (Test-Path "$env:DESTINO/KaraokeEscritorio.exe")) { Write-Output "Sin versión de escritorio"; exit 0 }
           $env:KARAOKE_PRUEBA_SEGUNDOS = "8"
           $env:KIVY_GL_BACKEND = "angle_sdl2"
           $p = Start-Process "$env:DESTINO/KaraokeEscritorio.exe" -PassThru
