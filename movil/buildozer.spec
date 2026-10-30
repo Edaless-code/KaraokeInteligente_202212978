@@ -24,7 +24,10 @@ android.permissions = RECORD_AUDIO
 android.extra_manifest_xml = ./recursos/consultas_voz.xml
 android.api = 34
 android.minapi = 24
-android.archs = arm64-v8a, armeabi-v7a
+# Solo 64 bits (prácticamente todos los teléfonos desde 2017-2019). Con dos
+# arquitecturas python-for-android rehace su entorno virtual encima del
+# anterior y el pip nuevo queda mezclado (ImportError al instalar módulos).
+android.archs = arm64-v8a
 android.accept_sdk_license = True
 android.allow_backup = True
 android.release_artifact = apk

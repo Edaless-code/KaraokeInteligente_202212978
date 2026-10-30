@@ -515,7 +515,7 @@ buildozer -v android debug        # genera bin/karaokeinteligente-1.0.0-...-debu
 |---|---|
 | Requisitos | `python3, kivy==2.3.1, plyer==2.1.0, pyjnius` |
 | API | 34; mínimo 24 (Android 7) |
-| Arquitecturas | `arm64-v8a` y `armeabi-v7a` |
+| Arquitecturas | `arm64-v8a` (64 bits; con dos arquitecturas python-for-android mezcla versiones de pip en su entorno virtual y falla) |
 | Ícono y pantalla de inicio | `recursos/` |
 
 Para probar la interfaz en la computadora: `python movil/main.py` (requiere `pip install kivy plyer`). `herramientas/capturas_movil.py` genera capturas de cada pantalla.
