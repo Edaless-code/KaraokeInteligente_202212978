@@ -5,7 +5,7 @@
 # de consola (KaraokeInteligente.exe + _internal) y compartir sus datos.
 
 from kivy_deps import angle, glew, sdl2
-from kivy.tools.packaging.pyinstaller_hooks import get_deps_all, hookspath, runtime_hooks
+from kivy.tools.packaging.pyinstaller_hooks import hookspath, runtime_hooks
 from PyInstaller.utils.hooks import (collect_all, collect_data_files, collect_dynamic_libs,
                                      collect_submodules)
 
@@ -18,15 +18,30 @@ for paquete in ("faster_whisper", "ctranslate2"):
     datas += d
     binaries += b
     ocultos += h
-kivy = get_deps_all()
+# Proveedores de Kivy que usa la app en Windows. Se listan a mano: la ayuda
+# get_deps_all() importa kivy.core.window al empaquetar y en un servidor sin
+# pantalla eso abre (o intenta abrir) una ventana y el empaquetado se queda colgado.
+kivy_ocultos = [
+    "kivy.core.window.window_sdl2",
+    "kivy.core.text.text_sdl2",
+    "kivy.core.image.img_sdl2",
+    "kivy.core.image.img_tex",
+    "kivy.core.clipboard.clipboard_winctypes",
+    "kivy.core.clipboard.clipboard_sdl2",
+    "kivy.core.audio.audio_sdl2",
+    "kivy.uix.anchorlayout",
+    "kivy.uix.modalview",
+    "kivy.uix.screenmanager",
+]
+kivy_excluir = ["kivy.core.video", "kivy.core.camera", "cv2", "gi", "ffpyplayer", "gst", "enchant"]
 
 a = Analysis(
     ["movil/main.py"],
     pathex=[".", "movil"],
     binaries=binaries,
     datas=datas,
-    hiddenimports=ocultos + kivy["hiddenimports"],
-    excludes=kivy["excludes"],
+    hiddenimports=ocultos + kivy_ocultos,
+    excludes=kivy_excluir,
     hookspath=hookspath(),
     runtime_hooks=runtime_hooks(),
 )
