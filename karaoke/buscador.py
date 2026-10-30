@@ -49,6 +49,7 @@ class Resultado:
     linea_inicio: int  # índice (base 0) de la línea donde empieza la coincidencia
     linea_fin: int  # índice (base 0) de la línea donde termina
     palabra_siguiente: int  # índice de la palabra que sigue a la coincidencia
+    evidencia: float = 0.0  # peso de las palabras que coincidieron
 
     @property
     def linea_actual(self) -> int:
@@ -126,6 +127,7 @@ class Buscador:
         self.umbral_palabra = config.decimal("busqueda", "semejanza_palabra")
         self.puntaje_minimo = config.decimal("busqueda", "puntaje_minimo")
         self.maximo_resultados = config.entero("busqueda", "resultados_maximos")
+        self.evidencia_minima = config.decimal("busqueda", "evidencia_minima")
         self._revision = -1
         self.canciones: dict[int, IndiceCancion] = {}
         self._frecuencia: dict[str, int] = {}
@@ -229,6 +231,7 @@ class Buscador:
                     indice.linea_de[ini],
                     indice.linea_de[fin],
                     fin + 1,
+                    round(bruto, 3),
                 )
             )
         resultados.sort(key=lambda r: (-r.puntaje, r.codigo))
@@ -240,12 +243,16 @@ class Buscador:
         prioridad: dict[int, float] | None = None,
         margen: float = 0.08,
         minimo: float | None = None,
+        evidencia: float | None = None,
     ) -> Resultado | None:
         """Devuelve la canción solo si el resultado es claro: supera el puntaje
-        mínimo y le saca ``margen`` a la segunda canción."""
+        mínimo, tiene suficiente evidencia (varias palabras significativas,
+        no una sola palabra común como "the" o "la") y le saca ``margen`` a la
+        segunda canción."""
         resultados = self.buscar(texto, prioridad, limite=2)
         minimo = self.puntaje_minimo if minimo is None else minimo
-        if not resultados or resultados[0].puntaje < minimo:
+        evidencia = self.evidencia_minima if evidencia is None else evidencia
+        if not resultados or resultados[0].puntaje < minimo or resultados[0].evidencia < evidencia:
             return None
         if len(resultados) > 1 and resultados[0].puntaje - resultados[1].puntaje < margen:
             return None

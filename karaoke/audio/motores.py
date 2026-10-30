@@ -13,6 +13,12 @@ Por cada idioma se pueden tener dos canales sobre el mismo audio:
   lo demás). Al limitar el vocabulario a la letra, la voz cantada (que es
   mucho más difícil que la hablada) se reconoce bastante mejor.
 
+``MotorWhisper`` (opcional, ``pip install faster-whisper``) usa Whisper de
+OpenAI en su versión optimizada para CPU. Es más lento y no entrega
+resultados parciales, pero entiende mucho mejor la voz con música de fondo,
+por lo que se usa para IDENTIFICAR la canción con una muestra de unos
+segundos (el seguimiento línea por línea lo sigue haciendo Vosk).
+
 ``MotorSimulado`` no escucha audio: entrega un guion de texto con tiempos.
 Sirve para las pruebas automatizadas y para hacer una demostración sin
 micrófono.
@@ -21,7 +27,10 @@ micrófono.
 from __future__ import annotations
 
 import json
+import math
+import queue
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -160,6 +169,104 @@ class MotorVosk(Motor):
             canal.reiniciar()
         if self.restringido is not None:
             self.restringido.reiniciar()
+
+
+class MotorWhisper(Motor):
+    """Transcribe ventanas de ``ventana`` segundos con faster-whisper.
+
+    En modo normal la transcripción corre en un hilo aparte y los resultados
+    llegan en llamadas posteriores a ``procesar``; con ``sincrono=True``
+    (herramientas y pruebas) cada ventana se transcribe en el momento."""
+
+    nombre = "Whisper"
+
+    def __init__(self, modelo: str = "base", idioma: str = "es", frecuencia: int = 16000,
+                 ventana: float = 6.0, solape: float = 1.0, carpeta_modelos: str | None = None,
+                 sincrono: bool = False):
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as ex:
+            raise ErrorMotor("Falta instalar Whisper: pip install faster-whisper") from ex
+        try:
+            self.modelo = WhisperModel(modelo, device="cpu", compute_type="int8",
+                                       download_root=carpeta_modelos)
+        except Exception as ex:
+            raise ErrorMotor(f"No se pudo cargar el modelo Whisper «{modelo}»: {ex}") from ex
+        self.idioma = idioma
+        self.idiomas = [idioma]
+        self.frecuencia = frecuencia
+        self.ventana = int(ventana * frecuencia)
+        self.solape = int(solape * frecuencia)
+        self.sincrono = sincrono
+        self.sugerencia: str | None = None
+        self.segundo = 0.0
+        self._bufer = np.zeros(0, dtype=np.float32)
+        self._resultados: queue.Queue[Transcripcion] = queue.Queue()
+        self._pendientes: queue.Queue = queue.Queue(maxsize=1)
+        if not sincrono:
+            threading.Thread(target=self._trabajar, daemon=True).start()
+
+    def restringir(self, vocabulario: set[str] | None, idioma: str | None = None) -> None:
+        # Whisper no admite una gramática; se le da la letra como "sugerencia".
+        self.sugerencia = " ".join(sorted(vocabulario))[:600] if vocabulario else None
+        if idioma:
+            self.idioma = idioma
+
+    def _transcribir(self, muestras: np.ndarray, segundo: float) -> None:
+        segmentos, _ = self.modelo.transcribe(
+            muestras, language=self.idioma, beam_size=1, vad_filter=True,
+            condition_on_previous_text=False, initial_prompt=self.sugerencia,
+        )
+        for segmento in segmentos:
+            texto = segmento.text.strip()
+            if texto:
+                self._resultados.put(Transcripcion(
+                    "final", texto, "libre", self.idioma,
+                    float(math.exp(segmento.avg_logprob)), segundo,
+                ))
+
+    def _trabajar(self) -> None:
+        while True:
+            muestras, segundo = self._pendientes.get()
+            try:
+                self._transcribir(muestras, segundo)
+            except Exception:
+                pass
+
+    def _enviar(self, muestras: np.ndarray) -> None:
+        if self.sincrono:
+            self._transcribir(muestras, self.segundo)
+            return
+        try:
+            self._pendientes.put_nowait((muestras, self.segundo))
+        except queue.Full:
+            pass  # Whisper sigue ocupado: se descarta esta ventana
+
+    def procesar(self, muestras: np.ndarray) -> list[Transcripcion]:
+        self.segundo += len(muestras) / self.frecuencia
+        self._bufer = np.concatenate([self._bufer, muestras.astype(np.float32)])
+        if len(self._bufer) >= self.ventana:
+            self._enviar(self._bufer.copy())
+            self._bufer = self._bufer[-self.solape :]
+        return self.recoger()
+
+    def vaciar(self) -> list[Transcripcion]:
+        """Transcribe lo que quede en el búfer (al terminar un archivo)."""
+        if len(self._bufer) > self.solape:
+            self._enviar(self._bufer.copy())
+        self._bufer = np.zeros(0, dtype=np.float32)
+        return self.recoger()
+
+    def recoger(self) -> list[Transcripcion]:
+        resultados = []
+        while True:
+            try:
+                resultados.append(self._resultados.get_nowait())
+            except queue.Empty:
+                return resultados
+
+    def reiniciar(self) -> None:
+        self._bufer = np.zeros(0, dtype=np.float32)
 
 
 _TIEMPO = re.compile(r"^\s*(?:(\d+):)?(\d+(?:\.\d+)?)\s+(.*)$")

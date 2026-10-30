@@ -12,18 +12,39 @@ on:
 jobs:
   transcribir:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: "Vosk libre sin limpieza"
+            opciones: "--motor vosk --sin-limpieza"
+          - nombre: "Vosk libre limpieza suave"
+            opciones: "--motor vosk"
+          - nombre: "Vosk libre aislando la voz"
+            opciones: "--motor vosk --aislar-voz"
+          - nombre: "Vosk restringido aislando la voz"
+            opciones: "--motor vosk --aislar-voz --restringido"
+          - nombre: "Whisper base sin limpieza"
+            opciones: "--motor whisper --sin-limpieza"
+          - nombre: "Whisper base aislando la voz"
+            opciones: "--motor whisper --sin-limpieza --aislar-voz"
+          - nombre: "Whisper small aislando la voz"
+            opciones: "--motor whisper --modelo-whisper small --sin-limpieza --aislar-voz"
+    name: ${{ matrix.nombre }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Instalar dependencias
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt faster-whisper
       - name: Modelos de voz en caché
         uses: actions/cache@v4
         with:
-          path: modelo
-          key: vosk-small-es-0.42-en-us-0.15
+          path: |
+            modelo
+            ~/.cache/huggingface
+          key: modelos-voz-v2
       - name: Descargar modelos de Vosk
         run: |
           mkdir -p modelo
@@ -33,10 +54,5 @@ jobs:
               unzip -q "$m.zip" -d modelo && rm "$m.zip"
             fi
           done
-          ls modelo
-      - name: Transcribir con limpieza (canal libre)
-        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en
-      - name: Transcribir sin limpieza (canal libre)
-        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en --sin-limpieza
-      - name: Transcribir con limpieza (canal restringido a las letras)
-        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en --restringido
+      - name: Transcribir Sound of You
+        run: python herramientas/transcribir.py ejemplos/Sound_of_You.mp3 --idioma en ${{ matrix.opciones }}

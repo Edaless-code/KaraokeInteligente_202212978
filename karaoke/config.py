@@ -48,6 +48,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "puntaje_minimo": "0.55",
         "semejanza_palabra": "0.78",
         "resultados_maximos": "5",
+        # Evidencia mínima para identificar una canción: suma de los pesos de
+        # las palabras que coincidieron (una palabra común pesa ~0.4 y una
+        # poco frecuente ~1.5). Evita identificar con una sola palabra.
+        "evidencia_minima": "2.5",
     },
     "audio": {
         # Motor de transcripción: vosk | whisper | simulado
@@ -66,7 +70,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "filtro_pasa_altos_hz": "100",
         "filtro_pasa_bajos_hz": "4000",
         "reduccion_ruido": "si",
-        "factor_sustraccion": "1.6",
+        # Al leer una canción estéreo ya mezclada (MP3) realza la voz que está
+        # al centro de la mezcla.
+        "aislar_voz_archivo": "si",
+        "factor_sustraccion": "1.0",
         "segundos_calibracion": "1.5",
         "control_ganancia": "si",
         "nivel_objetivo_db": "-20",

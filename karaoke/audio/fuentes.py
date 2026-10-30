@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .limpieza import a_mono, remuestrear
+from .limpieza import a_mono, aislar_voz_estereo, remuestrear
 
 SEGUNDOS_BLOQUE = 0.1
 
@@ -215,7 +215,9 @@ class FuenteArchivo(FuenteAudio):
         tiempo_real: bool = True,
         reproducir: bool = False,
         desde_segundo: float = 0.0,
+        aislar_voz: bool = False,
     ):
+        self.aislar_voz = aislar_voz
         self.ruta = Path(ruta)
         self.frecuencia = frecuencia
         self.tiempo_real = tiempo_real
@@ -229,7 +231,10 @@ class FuenteArchivo(FuenteAudio):
         self.duracion = 0.0
 
     def iniciar(self) -> None:
-        self._muestras = leer_archivo_audio(self.ruta, self.frecuencia)
+        if self.aislar_voz:
+            self._muestras = aislar_voz_estereo(leer_archivo_audio(self.ruta, self.frecuencia, canales=2))
+        else:
+            self._muestras = leer_archivo_audio(self.ruta, self.frecuencia)
         self.duracion = len(self._muestras) / self.frecuencia
         self._posicion = int(self.desde * self.frecuencia)
         self.terminada = False

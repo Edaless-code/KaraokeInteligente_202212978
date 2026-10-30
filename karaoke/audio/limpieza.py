@@ -77,11 +77,11 @@ class LimpiadorAudio:
         pasa_altos: float = 100.0,
         pasa_bajos: float = 4000.0,
         reduccion_ruido: bool = True,
-        factor_sustraccion: float = 1.6,
+        factor_sustraccion: float = 1.0,
         segundos_calibracion: float = 1.5,
         control_ganancia: bool = True,
         nivel_objetivo_db: float = -20.0,
-        piso: float = 0.08,
+        piso: float = 0.25,
     ):
         self.frecuencia = frecuencia
         self.reduccion_ruido = reduccion_ruido
@@ -207,3 +207,38 @@ class LimpiadorAudio:
         """Limpia una señal completa (útil para archivos y pruebas)."""
         partes = [self.procesar(muestras[i : i + bloque]) for i in range(0, len(muestras), bloque)]
         return np.concatenate(partes) if partes else np.zeros(0, dtype=np.float32)
+
+
+def aislar_voz_estereo(estereo: np.ndarray, intensidad: float = 1.0, piso: float = 0.15) -> np.ndarray:
+    """Separa la voz de una grabación estéreo (canción ya mezclada).
+
+    En casi todas las mezclas la voz principal está en el CENTRO (suena igual
+    en el canal izquierdo y en el derecho), mientras que muchos instrumentos
+    están abiertos a los lados. Se calcula el canal medio M = (L+R)/2 y el
+    lateral S = (L-R)/2; el espectro de S sirve como estimación de lo que NO
+    es voz y se resta del espectro de M (sustracción espectral). Devuelve una
+    señal mono con la voz realzada.
+    """
+    estereo = np.asarray(estereo, dtype=np.float32)
+    if estereo.ndim != 2 or estereo.shape[1] < 2:
+        return a_mono(estereo)
+    medio = (estereo[:, 0] + estereo[:, 1]) / 2
+    lateral = (estereo[:, 0] - estereo[:, 1]) / 2
+    trama, salto = 1024, 512
+    ventana = np.sqrt(np.hanning(trama + 1)[:trama]).astype(np.float32)
+    total = len(medio)
+    relleno = (-(total - trama) % salto) if total > trama else trama - total
+    medio = np.concatenate([np.zeros(salto, np.float32), medio, np.zeros(relleno + salto, np.float32)])
+    lateral = np.concatenate([np.zeros(salto, np.float32), lateral, np.zeros(relleno + salto, np.float32)])
+    cuadros = 1 + (len(medio) - trama) // salto
+    indices = np.arange(trama)[None, :] + salto * np.arange(cuadros)[:, None]
+    espectro_m = np.fft.rfft(medio[indices] * ventana, axis=1)
+    espectro_s = np.fft.rfft(lateral[indices] * ventana, axis=1)
+    potencia_m = np.abs(espectro_m) ** 2 + 1e-12
+    potencia_s = np.abs(espectro_s) ** 2
+    ganancia = np.sqrt(np.maximum(1.0 - intensidad * potencia_s / potencia_m, piso**2))
+    tramas = np.fft.irfft(espectro_m * ganancia, trama, axis=1).astype(np.float32) * ventana
+    salida = np.zeros(len(medio), dtype=np.float32)
+    for numero in range(cuadros):
+        salida[numero * salto : numero * salto + trama] += tramas[numero]
+    return salida[salto : salto + total]
