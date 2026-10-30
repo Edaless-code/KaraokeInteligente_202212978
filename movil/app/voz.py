@@ -142,7 +142,56 @@ class VozDemostracion(FuenteVoz):
         return resultados, hablando
 
 
-def crear_fuente(demostracion: bool, guion: Path, idioma: str = "es") -> FuenteVoz:
-    if demostracion or platform != "android":
+class VozEscritorio(FuenteVoz):
+    """Computadora: el micrófono con la misma cadena que la versión de consola
+    (limpieza del sonido + Vosk y/o Whisper), en un hilo aparte."""
+
+    def __init__(self, config, idiomas: list[str]):
+        from karaoke.audio.fuentes import FuenteMicrofono
+        from karaoke.audio.proceso import ProcesadorAudio, crear_limpiador, crear_motores
+
+        fuente = FuenteMicrofono(config.entero("audio", "frecuencia_muestreo"),
+                                 config.texto("audio", "dispositivo"))
+        motores, self.avisos = crear_motores(config, idiomas or ["es", "en"])
+        self.procesador = ProcesadorAudio(fuente, crear_limpiador(config, fuente), motores)
+        self.nombre = "Micrófono · " + self.procesador.nombres_motores
+        self._retrasos: dict[int, float] = {}
+
+    def iniciar(self) -> None:
+        self.procesador.iniciar()
+
+    def detener(self) -> None:
+        self.procesador.detener()
+
+    def pedir_vocabulario(self, vocabulario, idioma) -> None:
+        self.procesador.pedir_vocabulario(vocabulario, idioma)
+
+    def recoger(self, segundo: float) -> tuple[list[Transcripcion], bool]:
+        transcripciones: list[Transcripcion] = []
+        voz = False
+        while not self.procesador.cola.empty():
+            resultado = self.procesador.cola.get_nowait()
+            voz = voz or resultado.voz
+            transcripciones.extend(resultado.transcripciones)
+        return transcripciones, voz
+
+
+def crear_fuente(demostracion: bool, guion: Path, idioma: str = "es", config=None,
+                 idiomas: list[str] | None = None) -> FuenteVoz:
+    """Teléfono: reconocedor de Android. Computadora: micrófono con Vosk/Whisper.
+    Si no hay micrófono o modelos de voz, la demostración."""
+    if demostracion:
         return VozDemostracion(guion)
-    return VozAndroid(idioma)
+    if platform == "android":
+        return VozAndroid(idioma)
+    if config is not None:
+        try:
+            return VozEscritorio(config, idiomas or [])
+        except Exception as ex:  # sin micrófono, sin sounddevice o sin modelos
+            from kivy.logger import Logger
+
+            Logger.warning(f"Karaoke: micrófono no disponible, se usa la demostración: {ex}")
+            fuente = VozDemostracion(guion)
+            fuente.nombre = f"Demostración (sin micrófono: {ex})"
+            return fuente
+    return VozDemostracion(guion)

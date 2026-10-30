@@ -43,7 +43,7 @@ from karaoke.sesion import SesionKaraoke
 
 from .. import tema as T
 from ..componentes import Dialogo, FilaCancion
-from ..voz import VozAndroid, crear_fuente
+from ..voz import VozAndroid, VozDemostracion, crear_fuente
 from .base import Pantalla
 
 Builder.load_string("""
@@ -531,8 +531,11 @@ class Escenario(Pantalla):
                                              self.sesion, "Android")
         guion = self.app.carpeta / "ejemplos" / "guion_sound_of_you.txt"
         demostracion = getattr(self.app, "demostracion", False)
-        self.voz = crear_fuente(demostracion, guion)
-        self.fuente = "Demostración" if not isinstance(self.voz, VozAndroid) else "Micrófono"
+        idiomas = sorted({c.idioma for c in self.app.bd.todas_las_letras().values()})
+        self.voz = crear_fuente(demostracion, guion, config=self.app.config_karaoke, idiomas=idiomas)
+        self.fuente = "Micrófono" if not isinstance(self.voz, VozDemostracion) else "Demostración"
+        if "sin micrófono" in self.voz.nombre:
+            self.mensaje = self.voz.nombre
         self._segundo = 0.0
         if isinstance(self.voz, VozAndroid):
             VozAndroid.pedir_permiso(self._permiso)
@@ -558,7 +561,9 @@ class Escenario(Pantalla):
         self.control.tic(self._segundo, voz)
         if self.control.cancion is not None and hasattr(self.voz, "cambiar_idioma"):
             self.voz.cambiar_idioma(self.control.cancion.idioma)
-        self.control.vocabulario_pedido = None  # Android no usa vocabulario restringido
+        if self.control.vocabulario_pedido is not None and hasattr(self.voz, "pedir_vocabulario"):
+            self.voz.pedir_vocabulario(*self.control.vocabulario_pedido)  # computadora (Vosk)
+        self.control.vocabulario_pedido = None
         self.hay_voz = voz
         self.actualizar()
 
