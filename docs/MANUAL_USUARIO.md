@@ -80,7 +80,57 @@ Requisitos: Windows 10 u 11 de 64 bits, 4 GB de RAM y unos 700 MB de disco. El m
 
 ## 2. Instalación y ejecución en Android
 
-*(Esta sección se completa con la versión para Android.)*
+La versión de Android es una **app con interfaz táctil**, no la consola. Tiene las mismas funciones y usa el mismo núcleo que la versión de Windows.
+
+### Instalar la APK
+
+1. Descargue **`KaraokeInteligente-Android.apk`** en el teléfono:
+   - de *Releases* del repositorio, o
+   - de *Actions → APK de Android → la ejecución más reciente → Artifacts* (GitHub la entrega dentro de un ZIP: extráigala).
+2. Abra el archivo `.apk`. Si Android pregunta, permita **"Instalar aplicaciones de origen desconocido"** para el navegador o el administrador de archivos. Aparece porque la app no viene de Google Play.
+3. Toque **Instalar** y luego **Abrir**.
+4. La primera vez que use el **modo automático**, Android pedirá el permiso de **micrófono**. Es el único permiso de la app.
+
+Requisitos: Android 7.0 o superior. Para el modo automático sin internet, el teléfono debe tener descargado el idioma en *Ajustes → Sistema → Idiomas → Reconocimiento de voz sin conexión*. El nombre exacto del menú cambia según la marca.
+
+### Uso de la app
+
+La app tiene cuatro pestañas abajo:
+
+| Pestaña | Para qué | Equivale a |
+|---|---|---|
+| **Cantar** | Muestra la siguiente canción del programa y los dos modos: **Modo manual** y **Modo automático** | *m*, *a* |
+| **Biblioteca** | Lista de canciones de 10 en 10 y búsqueda por nombre o código. Al tocar una canción se ve su letra de 10 en 10, con botones para **corregir** (lápiz) y **borrar** (bote rojo, con confirmación). El botón **+** abre *Agregar canciones* | *w*, *x*, *u*, *b*, *f* |
+| **Programa** | Escribir o importar el programa del cantante, ver qué está pendiente o cantado, cantar una canción del programa y reiniciar el avance | *p* |
+| **Más** | Historial y estadísticas, ajustes, acerca de (con los derechos de autor) y, al final, la **Papelera** | *h*, *k* |
+
+**Agregar canciones** (Biblioteca → **+**):
+
+| Opción | Cómo funciona | Equivale a |
+|---|---|---|
+| **Pegar o escribir la letra** | El nombre y toda la letra de una vez. Cada renglón es una línea; las etiquetas como `[Chorus]` se quitan solas y las líneas largas se dividen. Es lo más rápido para canciones nuevas | — |
+| **Línea por línea** | Un campo para el nombre y otro para cada línea. **Enter** agrega la línea y una **línea vacía** termina | *e* |
+| **Importar archivo de texto** | Elegir un `.txt` del teléfono | *t* |
+| **Canciones de ejemplo** | Carga *Sound of You* y *Ghost of you* | — |
+| **Aprendidas por el modo automático** | Corregirlas, ponerles nombre y guardarlas en la biblioteca | *v* |
+
+**Pantalla del karaoke (Escenario):**
+- La línea que toca cantar aparece **grande y centrada**, con la anterior arriba en tono tenue y las dos siguientes debajo.
+- Arriba se ven la canción, "Línea X de Y", el estado y una barra de progreso.
+- Para avanzar:
+  - **Continuar** o **tocar la letra**: siguiente línea (*c*);
+  - **deslizar a la izquierda**: avanzar;
+  - **deslizar a la derecha**: regresar.
+- Los botones de abajo son **Atrás** (*a*), **Igual** (*i*), **Repetir** (*r*) y **Pausa/Seguir** (*g*/*s*).
+- La **X** termina la sesión y muestra el resumen de las canciones cantadas (*f*).
+
+**Modo automático:**
+- La app escucha con el **reconocedor de voz del teléfono**, reconoce la canción y la sigue sola.
+- La barra inferior muestra lo que va escuchando, y el punto se ilumina cuando detecta voz.
+- Los mismos botones corrigen lo que decida la IA.
+- Para mostrarlo **sin cantar**, active *Más → Ajustes → Usar la demostración*: la app sigue *Sound of You* con un guion.
+
+**Papelera:** *Más → Papelera* permite restaurar o eliminar definitivamente las canciones borradas. Está al final de la pantalla, a propósito, para que no estorbe.
 
 ---
 

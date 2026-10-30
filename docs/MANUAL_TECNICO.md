@@ -450,7 +450,48 @@ El ejecutable busca `karaoke.ini`, `CANCIONES.db`, `PROGRAMA.txt` y `modelo/` **
 
 ## 11. Versión para Android
 
-*(Se documenta con la versión para Android.)*
+### Tecnología
+
+**Kivy 2.3** (Python), compilado a APK con **Buildozer / python-for-android** en GitHub Actions (`.github/workflows/android-apk.yml`). La app (`movil/`) usa **el mismo paquete `karaoke`** que la versión de Windows: base de datos, buscador, programa, sesión, seguidor y controlador automático. Solo cambian la interfaz y la fuente de voz.
+
+| Módulo | Contenido |
+|---|---|
+| `movil/main.py` | Punto de entrada; agrega el núcleo `karaoke` al `sys.path` |
+| `movil/app/tema.py` | **Sistema de diseño**: paleta fría y mate con contraste verificado (WCAG ≥ 4.5:1 en textos), tipografía Inter con jerarquía por peso y tamaño, espaciado, radios, movimiento e íconos |
+| `movil/app/componentes.py` | Componentes reutilizables: tarjetas, botones con respuesta inmediata al presionar, campos, chips, filas, barra de pestañas, diálogos y avisos |
+| `movil/app/aplicacion.py` | Datos (en el almacenamiento privado de la app), navegación con pila y transiciones, botón *atrás* de Android |
+| `movil/app/pantallas/*` | Cantar, Biblioteca + Detalle, Agregar / Nueva / Editor, Buscar, Escenario, Programa, Más (Historial, Ajustes, Acerca de, Papelera) |
+| `movil/app/voz.py` | `VozAndroid` (reconocedor del sistema) y `VozDemostracion` (guion) |
+
+### Modo automático en Android
+
+Vosk y Whisper necesitan NumPy y modelos de cientos de MB, demasiado pesados para una APK liviana. Por eso, en Android se usa el **reconocedor de voz del propio sistema** (`android.speech.SpeechRecognizer`, a través de `plyer.stt`). Es lo que sugiere la especificación: aprovechar los recursos locales de Android.
+
+- Entrega **resultados parciales** mientras se canta y, con el paquete de idioma descargado, funciona **sin internet** (`prefer_offline`).
+- Se detiene solo tras un silencio, así que `VozAndroid` lo **reinicia automáticamente** para escuchar de forma continua.
+- El idioma pasa al de la canción identificada (`es-ES` / `en-US`).
+- Las transcripciones se convierten en `Transcripcion` y van al **mismo `ControladorAutomatico`** de Windows: identificación con evidencia mínima, seguidor línea por línea, pausas automáticas, aprendizaje de canciones nuevas y programa.
+- El núcleo se separó de NumPy para esto: `karaoke/transcripcion.py` y `karaoke/motor_simulado.py` no lo usan, y la APK no incluye `karaoke/audio` ni la interfaz de consola.
+- **Permisos:** solo `RECORD_AUDIO`, pedido en tiempo de ejecución la primera vez. Para Android 11+ se declara en el manifiesto la consulta a `android.speech.RecognitionService` (`recursos/consultas_voz.xml`).
+
+### Compilación
+
+```bash
+cd movil
+cp -r ../karaoke ./karaoke        # el flujo de GitHub Actions lo hace solo
+buildozer -v android debug        # genera bin/karaokeinteligente-1.0.0-...-debug.apk
+```
+
+`buildozer.spec`:
+
+| Clave | Valor |
+|---|---|
+| Requisitos | `python3, kivy==2.3.1, plyer==2.1.0, pyjnius` |
+| API | 34; mínimo 24 (Android 7) |
+| Arquitecturas | `arm64-v8a` y `armeabi-v7a` |
+| Ícono y pantalla de inicio | `recursos/` |
+
+Para probar la interfaz en la computadora: `python movil/main.py` (requiere `pip install kivy plyer`). `herramientas/capturas_movil.py` genera capturas de cada pantalla.
 
 ---
 
