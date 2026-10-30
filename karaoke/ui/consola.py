@@ -51,6 +51,7 @@ def inicializar(colores: bool = True) -> None:
             import ctypes
 
             kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleTitleW("Karaoke Inteligente")
             kernel32.SetConsoleOutputCP(65001)
             kernel32.SetConsoleCP(65001)
             manejador = kernel32.GetStdHandle(-11)
@@ -60,6 +61,8 @@ def inicializar(colores: bool = True) -> None:
                 kernel32.SetConsoleMode(manejador, modo.value | 0x0004)
         except Exception:
             usar_colores = False
+    elif usar_colores:
+        sys.stdout.write("\033]0;Karaoke Inteligente\007")  # título de la ventana
 
 
 def color(texto: str, *estilos: str) -> str:

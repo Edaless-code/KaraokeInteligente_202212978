@@ -152,6 +152,7 @@ En cada menú se escribe la letra de la opción y se presiona **Enter**. El men�
 |---|---|---|
 | **m** | Modo manual | Buscar la canción con palabras y avanzar con **c** |
 | **a** | Modo automático | La IA escucha, identifica y avanza sola |
+| **r** | Reproducir con letra *(agregada)* | La pista suena y la letra cambia sola, a tiempo |
 | **f** | Modo alimentación | Agregar canciones desde un archivo de texto (t), escribiéndolas (e) o desde un MP3 (m) |
 | **p** | Programa del cantante | Cargar la lista preplaneada de canciones (archivo PROGRAMA) |
 | **w** | Ver canciones | Todos los códigos y nombres, de 10 en 10 |
@@ -255,6 +256,24 @@ Las teclas del modo manual siguen funcionando **para corregir lo que haga la IA*
 
 ---
 
+### 6.1 Reproducir con letra (r) *(agregada)*
+
+Es el karaoke "de toda la vida": la **pista suena** por las bocinas y la **letra cambia sola**, cada línea **medio segundo antes** de que se cante, para leerla y entrar a tiempo aunque no se conozca la canción. Durante la intro se ve una **cuenta regresiva** hasta la primera línea.
+
+1. Se muestran numeradas las canciones que tienen pista (las agregadas con **f → m** y las de ejemplo). Escriba el número.
+2. La primera vez que se abre una canción, la IA escucha la pista **una sola vez** (alrededor de un minuto) para saber en qué segundo empieza cada línea. Queda guardado: las siguientes veces empieza al instante.
+
+| Tecla | Acción |
+|---|---|
+| **espacio** | Pausa / seguir |
+| **←** / **→** | Retroceder / adelantar 5 segundos |
+| **-** / **+** | **Bajar o subir la voz del artista** (de 25 en 25 %): al 0 % queda casi solo la música y se escucha mejor a quien canta |
+| **f** | Terminar |
+
+> **Cómo se baja la voz del artista:** la voz principal casi siempre suena igual en los dos canales (está "en el centro"), y los instrumentos se reparten a los lados. El programa resta lo que es igual en ambos canales, solo en las frecuencias de la voz; el bajo, el bombo y los instrumentos de los lados se quedan. Puede quedar un eco leve de la reverberación. Si tiene la voz y la música por separado (por ejemplo, los *stems* que exporta Suno), el resultado es perfecto.
+
+---
+
 ## 7. Modo alimentación (f)
 
 | Tecla | Opción |
@@ -274,17 +293,20 @@ La forma más fácil de agregar una canción propia es darle al programa la pist
 1. Escriba la ruta de **un archivo** o de **una carpeta** con varias pistas. En Windows se puede **arrastrar el archivo a la ventana** en lugar de escribir la ruta.
 2. Indique el idioma (**es** o **en**) o presione **Enter** para que se detecte solo.
 3. La IA (Whisper) escucha la canción completa y escribe un **borrador de la letra**, una frase cantada por línea. Tarda alrededor de un minuto por canción; se ve el avance en porcentaje.
-4. Revise el borrador, porque la IA puede equivocarse en algunas palabras:
+4. Revise el borrador. La IA acierta alrededor del **90 %** de las palabras (medido con las canciones de ejemplo), así que puede equivocarse en algunas:
 
 | Tecla | Acción |
 |---|---|
-| **g** | Guardar la canción en la base de datos, con su pista |
+| **g** | Guardar la canción en la base de datos, con su pista y los tiempos de cada línea |
 | **e** | Editar la letra línea por línea (corregir, insertar, borrar) |
+| **l** | **Usar mi letra**: escribirla o indicar un `.txt`. El texto queda exacto y la IA solo calcula en qué segundo empieza cada línea |
 | **n** | Cambiar el nombre (se sugiere a partir del nombre del archivo) |
 | **v** | Dejarla para revisar después en **f → v** |
 | **d** | Descartar el borrador |
 
-La pista se copia a la carpeta **`pistas`** junto al programa y queda asociada a la canción, para cantarla en el modo automático eligiéndola por número. Si ya existe una canción con ese nombre (por ejemplo, porque se cargó desde `canciones.txt`), el programa ofrece **solo asociarle la pista** sin cambiar su letra.
+> **Para que la letra quede perfecta (100 %):** si usted escribió la letra, guárdela en un `.txt` con el **mismo nombre** que el audio, en la misma carpeta (`Mi canción.mp3` y `Mi canción.txt`). El programa usa su letra tal cual y la IA solo pone los tiempos. Las etiquetas como `[Coro]` y los comentarios `//` se ignoran.
+
+La pista se copia a la carpeta **`pistas`** junto al programa y queda asociada a la canción, para cantarla en el modo automático eligiéndola por número. Si ya existe una canción con ese nombre (por ejemplo, porque se cargó desde `canciones.txt`), el programa ofrece **asociarle la pista y sincronizar su letra** sin cambiarla; desde ese momento se puede reproducir con **r**.
 
 ---
 
