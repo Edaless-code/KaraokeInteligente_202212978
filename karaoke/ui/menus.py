@@ -144,8 +144,9 @@ class Aplicacion:
         Diagnostico(self).ejecutar()
 
     def modo_automatico(self) -> None:
-        consola.aviso("El modo automático estará disponible en la siguiente versión.")
-        self.teclado.pausa()
+        from .modo_automatico import ModoAutomatico
+
+        ModoAutomatico(self).ejecutar()
 
     # ------------------------------------------------------------- (w) y (x)
     def ver_canciones(self) -> None:

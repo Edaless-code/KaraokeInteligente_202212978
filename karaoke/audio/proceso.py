@@ -19,7 +19,7 @@ from ..config import Config
 from .fuentes import FuenteArchivo, FuenteAudio
 from .limpieza import LimpiadorAudio
 from .modelos import idiomas_disponibles, ruta_modelo
-from .motores import ErrorMotor, Motor, MotorVosk, MotorWhisper, Transcripcion
+from .motores import ErrorMotor, Motor, MotorSimulado, MotorVosk, MotorWhisper, Transcripcion
 
 
 @dataclass
@@ -47,6 +47,11 @@ def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) ->
     eleccion = config.texto("audio", "motor").lower()
     avisos: list[str] = []
     motores: list[Motor] = []
+    if eleccion == "simulado":
+        guion = config.ruta("audio", "guion_simulado")
+        if not guion.exists():
+            raise ErrorMotor(f"No existe el guion del motor simulado: {guion}")
+        return [MotorSimulado(str(guion), config.entero("audio", "frecuencia_muestreo"))], avisos
     if eleccion in ("hibrido", "híbrido", "vosk"):
         disponibles = [i for i in idiomas if i in idiomas_disponibles(config)] or idiomas_disponibles(config)
         if disponibles:

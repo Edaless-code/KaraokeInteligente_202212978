@@ -59,7 +59,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         #            instalado) identifica la canción y confirma la posición.
         #   vosk     solo Vosk (más ligero).
         #   whisper  solo Whisper (más preciso con música, más lento).
+        #   simulado lee el guion de texto "guion_simulado" (demostración sin
+        #            micrófono ni modelos de voz).
         "motor": "hibrido",
+        "guion_simulado": "ejemplos/guion_sound_of_you.txt",
         # Carpetas de los modelos de Vosk de cada idioma (relativas a la
         # carpeta del programa). Si faltan, el programa ofrece descargarlos.
         "modelo_vosk_es": "modelo/vosk-model-small-es-0.42",
