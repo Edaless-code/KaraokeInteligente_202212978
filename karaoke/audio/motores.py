@@ -182,7 +182,7 @@ class MotorWhisper(Motor):
 
     def __init__(self, modelo: str = "base", idioma: str = "es", frecuencia: int = 16000,
                  ventana: float = 6.0, solape: float = 1.0, carpeta_modelos: str | None = None,
-                 sincrono: bool = False):
+                 sincrono: bool = False, filtro_vad: bool = False):
         try:
             from faster_whisper import WhisperModel
         except ImportError as ex:
@@ -198,6 +198,9 @@ class MotorWhisper(Motor):
         self.ventana = int(ventana * frecuencia)
         self.solape = int(solape * frecuencia)
         self.sincrono = sincrono
+        # El filtro de voz interno de Whisper descarta la voz cantada sobre
+        # música (se comprobó con Sound of You), por eso va apagado.
+        self.filtro_vad = filtro_vad
         self.sugerencia: str | None = None
         self.segundo = 0.0
         self._bufer = np.zeros(0, dtype=np.float32)
@@ -214,7 +217,7 @@ class MotorWhisper(Motor):
 
     def _transcribir(self, muestras: np.ndarray, segundo: float) -> None:
         segmentos, _ = self.modelo.transcribe(
-            muestras, language=self.idioma, beam_size=1, vad_filter=True,
+            muestras, language=self.idioma, beam_size=1, vad_filter=self.filtro_vad,
             condition_on_previous_text=False, initial_prompt=self.sugerencia,
         )
         for segmento in segmentos:
