@@ -126,3 +126,9 @@ def test_teclas_manuales_en_modo_automatico(entorno):
 def test_sugerir_nombre():
     assert sugerir_nombre(["hola", "el coro es este", "el coro es este"]) == "El coro es este"
     assert sugerir_nombre(["una sola línea larga de verdad muy larga"]) == "Una sola linea larga de verdad"
+
+
+def test_descarta_aprendizajes_muy_cortos(entorno):
+    control, bd, _ = entorno
+    correr(control, "0:01 im not going to do it oh no no no no no no no no no no no", 30)
+    assert bd.listar_temporales() == []

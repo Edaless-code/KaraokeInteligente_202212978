@@ -302,8 +302,11 @@ class ControladorAutomatico:
         if self.id_temporal is None:
             self.estado = ESPERANDO
             return
-        if descartar_si_corta and len(self.lineas_aprendidas) <= 2:
+        if len(self.lineas_aprendidas) < 3 or (descartar_si_corta and len(self.lineas_aprendidas) <= 2):
+            # Menos de 3 líneas no es una canción (un comentario, el murmullo
+            # del final de una pista): se descarta.
             self.bd.borrar_temporal(self.id_temporal)
+            self.avisar("Lo que se escuchó era muy corto para ser una canción nueva; se descartó.")
         else:
             nombre = sugerir_nombre(self.lineas_aprendidas)
             self.bd.sugerir_nombre_temporal(self.id_temporal, nombre)
