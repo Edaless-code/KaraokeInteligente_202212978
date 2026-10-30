@@ -296,3 +296,24 @@ def test_sesion_abierta_se_cierra_al_reabrir(tmp_path):
     otra = BaseDatos(ruta)
     assert otra.conexion.execute("SELECT COUNT(*) FROM SESIONES WHERE fin IS NULL").fetchone()[0] == 0
     otra.cerrar()
+
+
+def test_tiempos_favoritas_generos_y_portadas(tmp_path):
+    bd = BaseDatos(tmp_path / "CANCIONES.db")
+    a = bd.agregar_cancion("Sound of You", ["uno", "dos", "tres"])
+    b = bd.agregar_cancion("Ghost of you", ["cuatro", "cinco"])
+    bd.guardar_tiempos(a, [10.0, 13.5, 16.2])
+    assert bd.obtener_tiempos(a) == [10.0, 13.5, 16.2]
+    assert bd.obtener_tiempos(b) is None
+    bd.actualizar_letra(a, ["uno", "dos", "tres", "cuatro"])  # la letra cambió: los tiempos ya no sirven
+    assert bd.obtener_tiempos(a) is None
+    bd.marcar_favorita(b)
+    bd.establecer_genero(a, "Pop")
+    bd.establecer_genero(b, "Pop")
+    bd.establecer_portada(b, "portadas/002.jpg")
+    cancion = bd.obtener_cancion(b)
+    assert cancion.favorita and cancion.genero == "Pop" and cancion.portada == "portadas/002.jpg"
+    assert bd.generos() == [("Pop", 2)]
+    assert [c for c, _, _ in bd.listar_filtradas(favoritas=True)] == [b]
+    assert [c for c, _, _ in bd.listar_filtradas(genero="Pop")] == [a, b]
+    bd.cerrar()

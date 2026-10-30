@@ -33,7 +33,7 @@ from pathlib import Path
 
 from .texto import detectar_idioma, normalizar, semejanza
 
-VERSION_ESQUEMA = 3
+VERSION_ESQUEMA = 4
 
 # Límites de seguridad (protegen la memoria y la base de datos de entradas
 # anómalas). La longitud "normal" de una línea se configura en karaoke.ini.
@@ -97,6 +97,15 @@ CREATE TABLE IF NOT EXISTS PISTAS (
     fecha_registro      TEXT    NOT NULL
 );
 
+-- Segundo en que empieza cada línea en la pista (versión 4): la letra se
+-- muestra a tiempo al reproducir la canción. Se borra si cambia la letra.
+CREATE TABLE IF NOT EXISTS TIEMPOS (
+    codigo              INTEGER NOT NULL REFERENCES NOMBRES(codigo) ON DELETE CASCADE,
+    numero_linea        INTEGER NOT NULL,
+    inicio              REAL    NOT NULL,
+    PRIMARY KEY (codigo, numero_linea)
+);
+
 CREATE TABLE IF NOT EXISTS PROGRAMA (
     orden               INTEGER PRIMARY KEY,
     nombre_solicitado   TEXT    NOT NULL,
@@ -152,6 +161,9 @@ class Cancion:
     origen: str = ""
     veces_cantada: int = 0
     idioma: str = "es"
+    favorita: bool = False
+    genero: str = ""
+    portada: str | None = None
 
 
 @dataclass
@@ -224,8 +236,16 @@ class BaseDatos:
     def _migrar(self, desde: int) -> None:
         """Migraciones del esquema. Cada versión nueva agrega aquí sus pasos;
         las bases de versiones anteriores se actualizan solas al abrirse."""
-        if "eliminada_en" not in self._columnas("NOMBRES"):  # versión 2: papelera
+        columnas = self._columnas("NOMBRES")
+        if "eliminada_en" not in columnas:  # versión 2: papelera
             self.conexion.execute("ALTER TABLE NOMBRES ADD COLUMN eliminada_en TEXT")
+        # versión 4: favoritas, género o carpeta y portada (imagen)
+        if "favorita" not in columnas:
+            self.conexion.execute("ALTER TABLE NOMBRES ADD COLUMN favorita INTEGER NOT NULL DEFAULT 0")
+        if "genero" not in columnas:
+            self.conexion.execute("ALTER TABLE NOMBRES ADD COLUMN genero TEXT NOT NULL DEFAULT ''")
+        if "portada" not in columnas:
+            self.conexion.execute("ALTER TABLE NOMBRES ADD COLUMN portada TEXT")
 
     def _respaldar(self, motivo: str) -> Path | None:
         """Copia la base de datos antes de una operación delicada."""
@@ -319,8 +339,8 @@ class BaseDatos:
 
     def obtener_cancion(self, codigo: int, incluir_papelera: bool = False) -> Cancion | None:
         fila = self.conexion.execute(
-            "SELECT codigo, nombre_cancion, artista, origen, veces_cantada, idioma FROM NOMBRES"
-            " WHERE codigo = ? AND (? OR eliminada_en IS NULL)",
+            "SELECT codigo, nombre_cancion, artista, origen, veces_cantada, idioma, favorita, genero, portada"
+            " FROM NOMBRES WHERE codigo = ? AND (? OR eliminada_en IS NULL)",
             (codigo, incluir_papelera),
         ).fetchone()
         if not fila:
@@ -331,7 +351,7 @@ class BaseDatos:
                 "SELECT linea FROM LETRAS WHERE codigo = ? ORDER BY numero_linea", (codigo,)
             )
         ]
-        return Cancion(fila[0], fila[1], lineas, fila[2], fila[3], fila[4], fila[5])
+        return Cancion(fila[0], fila[1], lineas, fila[2], fila[3], fila[4], fila[5], bool(fila[6]), fila[7], fila[8])
 
     def listar_canciones(self, desde: int = 0, cantidad: int = -1) -> list[tuple[int, str, int]]:
         """Devuelve (código, nombre, número de líneas) ordenado por código."""
@@ -393,6 +413,7 @@ class BaseDatos:
         _, lineas = self._validar(None, lineas)
         with self._transaccion() as c:
             c.execute("DELETE FROM LETRAS WHERE codigo = ?", (codigo,))
+            c.execute("DELETE FROM TIEMPOS WHERE codigo = ?", (codigo,))  # ya no corresponden
             self._insertar_lineas(codigo, lineas)
             c.execute("UPDATE NOMBRES SET idioma = ? WHERE codigo = ?", (detectar_idioma(lineas), codigo))
 
@@ -536,6 +557,55 @@ class BaseDatos:
         self.conexion.commit()
 
     # --------------------------------------------------------------- programa
+    # ------------------------------------------------- tiempos de la letra
+    def guardar_tiempos(self, codigo: int, tiempos: list[float]) -> None:
+        with self._transaccion() as c:
+            c.execute("DELETE FROM TIEMPOS WHERE codigo = ?", (codigo,))
+            c.executemany("INSERT INTO TIEMPOS(codigo, numero_linea, inicio) VALUES (?, ?, ?)",
+                          [(codigo, n, float(t)) for n, t in enumerate(tiempos, 1)])
+
+    def obtener_tiempos(self, codigo: int) -> list[float] | None:
+        """Tiempos de todas las líneas, o ``None`` si no están (o no cuadran)."""
+        filas = self.conexion.execute(
+            "SELECT inicio FROM TIEMPOS WHERE codigo = ? ORDER BY numero_linea", (codigo,)).fetchall()
+        lineas = self.conexion.execute("SELECT COUNT(*) FROM LETRAS WHERE codigo = ?", (codigo,)).fetchone()[0]
+        if not filas or len(filas) != lineas:
+            return None
+        return [f[0] for f in filas]
+
+    # ------------------------------------------ favoritas, géneros y portadas
+    def marcar_favorita(self, codigo: int, favorita: bool = True) -> None:
+        with self._transaccion() as c:
+            c.execute("UPDATE NOMBRES SET favorita = ? WHERE codigo = ?", (int(favorita), codigo))
+
+    def establecer_genero(self, codigo: int, genero: str) -> None:
+        with self._transaccion() as c:
+            c.execute("UPDATE NOMBRES SET genero = ? WHERE codigo = ?", (limpiar_texto(genero, 60), codigo))
+
+    def establecer_portada(self, codigo: int, portada: str | None) -> None:
+        with self._transaccion() as c:
+            c.execute("UPDATE NOMBRES SET portada = ? WHERE codigo = ?",
+                      (limpiar_texto(portada, 500) if portada else None, codigo))
+
+    def generos(self) -> list[tuple[str, int]]:
+        """(género o carpeta, número de canciones), sin las que no tienen."""
+        return [tuple(f) for f in self.conexion.execute(
+            "SELECT genero, COUNT(*) FROM NOMBRES WHERE eliminada_en IS NULL AND genero != ''"
+            " GROUP BY genero ORDER BY genero COLLATE NOCASE")]
+
+    def listar_filtradas(self, genero: str | None = None, favoritas: bool = False) -> list[tuple[int, str, int]]:
+        """Como ``listar_canciones`` pero solo un género o solo las favoritas."""
+        condiciones, parametros = ["n.eliminada_en IS NULL"], []
+        if genero is not None:
+            condiciones.append("n.genero = ?")
+            parametros.append(genero)
+        if favoritas:
+            condiciones.append("n.favorita = 1")
+        return [(r[0], r[1], r[2]) for r in self.conexion.execute(
+            "SELECT n.codigo, n.nombre_cancion, COUNT(l.id) FROM NOMBRES n"
+            " LEFT JOIN LETRAS l ON l.codigo = n.codigo WHERE " + " AND ".join(condiciones) +
+            " GROUP BY n.codigo ORDER BY n.codigo", parametros)]
+
     # ------------------------------------------------------------ pistas
     def guardar_pista(self, codigo: int, archivo: str) -> None:
         with self._transaccion() as c:
