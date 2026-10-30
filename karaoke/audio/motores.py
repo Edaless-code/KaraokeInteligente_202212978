@@ -37,25 +37,8 @@ from pathlib import Path
 import numpy as np
 
 from ..texto import leer_texto
+from ..transcripcion import Transcripcion
 from .limpieza import a_pcm16
-
-
-@dataclass
-class Transcripcion:
-    tipo: str  # "parcial" o "final"
-    texto: str
-    canal: str = "libre"  # "libre" o "restringido"
-    idioma: str = "es"
-    confianza: float = 1.0
-    segundo: float = 0.0
-
-    @property
-    def palabras(self) -> list[str]:
-        return [p for p in self.texto.split() if p != "[unk]"]
-
-    @property
-    def desconocidas(self) -> int:
-        return self.texto.split().count("[unk]")
 
 
 class ErrorMotor(Exception):

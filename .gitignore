@@ -7,3 +7,8 @@ build/
 dist/
 *.spec.bak
 modelo/
+
+# Kivy / Buildozer
+.buildozer/
+bin/
+movil/karaoke/

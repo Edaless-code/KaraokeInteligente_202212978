@@ -4,6 +4,7 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+    paths-ignore: ["movil/**", "docs/**", "*.md"]
   workflow_dispatch:
 
 permissions:

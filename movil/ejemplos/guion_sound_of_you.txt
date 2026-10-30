@@ -1,0 +1,12 @@
+// © 2026 Edgar Alessandro Chocon Oliva. Fragmentos de la letra de "Sound of You".
+// Guion para el motor "simulado": minutos:segundos y lo que se canta.
+// Los tiempos son los que transcribió Whisper de Sound_of_You.mp3.
+0:21 I heard the sound of you everything
+0:26 seems that you follow me everywhere
+0:31 everywhere it seems that you was made for me
+0:36 I'm afraid to fall in love again
+0:39 but it's hard to resist it's hard to not fall again
+0:44 if I always see you when I close my eyes
+0:51 I'm afraid to hurt you
+0:56 I'm going to let you down
+1:06 I don't let you down

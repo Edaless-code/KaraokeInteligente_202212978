@@ -37,13 +37,13 @@ from __future__ import annotations
 from collections import Counter, deque
 from dataclasses import dataclass, field
 
-from .audio.motores import Transcripcion
+from .transcripcion import Transcripcion
 from .buscador import Buscador, Resultado
 from .config import Config
 from .db import BaseDatos, Cancion
 from .seguimiento import Evento, Seguidor
 from .sesion import SesionKaraoke
-from .texto import ajustar_linea, normalizar, palabras as normalizar_palabras, vocabulario
+from .texto import ajustar_linea, normalizar, vocabulario
 
 ESPERANDO = "esperando"
 SIGUIENDO = "siguiendo"
