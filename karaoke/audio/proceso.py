@@ -62,7 +62,9 @@ def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) ->
     if eleccion in ("hibrido", "híbrido", "whisper"):
         if whisper_disponible():
             try:
-                motores.append(MotorWhisper(config.texto("audio", "modelo_whisper"), "auto",
+                carpeta = config.ruta("audio", "carpeta_whisper")
+                modelo = str(carpeta) if (carpeta / "model.bin").exists() else config.texto("audio", "modelo_whisper")
+                motores.append(MotorWhisper(modelo, "auto",
                                             config.entero("audio", "frecuencia_muestreo"),
                                             sincrono=sincrono))
             except ErrorMotor as ex:

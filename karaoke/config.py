@@ -67,8 +67,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         # carpeta del programa). Si faltan, el programa ofrece descargarlos.
         "modelo_vosk_es": "modelo/vosk-model-small-es-0.42",
         "modelo_vosk_en": "modelo/vosk-model-small-en-us-0.15",
-        # Modelo de faster-whisper si se usa el motor whisper.
+        # Modelo de faster-whisper (tiny, base, small...). Si existe la carpeta
+        # "carpeta_whisper" se usa sin internet; si no, se descarga la primera vez.
         "modelo_whisper": "base",
+        "carpeta_whisper": "modelo/whisper-base",
         "idioma": "es",
         "frecuencia_muestreo": "16000",
         # Índice o nombre del micrófono; vacío = micrófono predeterminado.
