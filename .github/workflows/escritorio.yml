@@ -1,0 +1,40 @@
+name: Versión de escritorio (interfaz gráfica)
+
+# Se construye aparte de la versión de consola (la de la entrega) para que una
+# falla aquí nunca retrase el .exe principal.
+on:
+  push:
+    branches: ["**"]
+    paths: ["escritorio.spec", "movil/app/**", "movil/main.py", ".github/workflows/escritorio.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: escritorio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  escritorio:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt faster-whisper pyinstaller kivy==2.3.1 pillow
+      - name: Empaquetar
+        timeout-minutes: 25
+        run: pyinstaller --noconfirm --clean --log-level DEBUG --distpath dist-escritorio escritorio.spec 2>&1 | Select-Object -Last 120
+      - name: Comprimir
+        run: |
+          Compress-Archive -Path dist-escritorio/KaraokeEscritorio/* -DestinationPath KaraokeEscritorio-Windows.zip
+          "{0:N0} MB" -f ((Get-Item KaraokeEscritorio-Windows.zip).Length / 1MB)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KaraokeEscritorio-Windows
+          path: KaraokeEscritorio-Windows.zip
+          retention-days: 30
