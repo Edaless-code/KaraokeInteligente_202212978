@@ -62,6 +62,7 @@ jobs:
         shell: bash   # con pipefail: si buildozer falla, el paso falla
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+          PIP_CONSTRAINT: ${{ github.workspace }}/movil/restricciones-pip.txt
         run: |
           set -o pipefail
           yes | buildozer -v android debug 2>&1 | tee buildozer.log | grep -E "^\[INFO\]|^\[WARNING\]|error|Error|APK" | tail -n 200

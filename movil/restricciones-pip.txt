@@ -1,0 +1,5 @@
+# Restricciones para TODAS las instalaciones de pip durante la compilación de
+# la APK (variable PIP_CONSTRAINT del flujo android-apk.yml).
+# charset-normalizer 3.5 publica ruedas solo para Android que el pip de la
+# máquina de compilación no acepta; la 3.4.0 es Python puro.
+charset-normalizer==3.4.0
