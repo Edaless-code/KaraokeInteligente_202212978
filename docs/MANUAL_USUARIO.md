@@ -1,6 +1,6 @@
 # Manual de usuario · Karaoke Inteligente
 
-**Autor:** _(nombre del estudiante)_ · Carné 202212978
+**Autor:** Edgar Alessandro Chocon Oliva · Carné 202212978
 **Versión:** 1.0.0
 
 El Karaoke Inteligente muestra en pantalla, **línea por línea**, la letra de la canción que alguien está cantando, al ritmo del cantante. Así el público puede acompañarlo aunque no se sepa la letra de memoria.
@@ -29,6 +29,7 @@ Funciona de dos maneras:
 11. [Configuración: cómo cambiar los 80 caracteres y las 10 líneas](#11-configuración-cómo-cambiar-los-80-caracteres-y-las-10-líneas)
 12. [Formato de los archivos de texto](#12-formato-de-los-archivos-de-texto)
 13. [Problemas frecuentes](#13-problemas-frecuentes)
+14. [Derechos de autor de las canciones de ejemplo](#derechos-de-autor-de-las-canciones-de-ejemplo)
 
 ---
 
@@ -350,3 +351,13 @@ Lleva un nombre de canción por renglón, en el orden en que se piensa cantar. S
 | El modo automático no identifica la canción | Verifique que la canción esté en la base (opción **w**). Revise el micrófono en **d → n**, acérquelo al cantante y cante algunas palabras más |
 | La letra se adelanta o se atrasa | Use **a** / **c** para corregir. En `karaoke.ini`, `avance_linea` controla qué tan antes se muestra la siguiente línea |
 | "Falta el modelo de voz" | Acepte la descarga, que necesita internet, o copie la carpeta `modelo` del ZIP junto al programa |
+
+---
+
+## Derechos de autor de las canciones de ejemplo
+
+Las letras de las canciones **"Sound of You"** y **"Ghost of you"** son obra original de **Edgar Alessandro Chocon Oliva** (carné 202212978), igual que las grabaciones `ejemplos/Sound_of_You.mp3` y `ejemplos/Ghost_of_you_Remastered.mp3`, que el autor produjo con la herramienta Suno.
+
+© 2026 Edgar Alessandro Chocon Oliva. **Todos los derechos reservados.**
+
+Se incluyen en este proyecto **únicamente como material de ejemplo y de prueba** del Karaoke Inteligente. No se autoriza copiarlas, distribuirlas, interpretarlas públicamente ni usarlas con otro fin sin el permiso escrito del autor. La licencia del código del programa no se extiende a estas letras ni a estos audios.

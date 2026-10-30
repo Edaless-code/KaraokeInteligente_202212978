@@ -1,6 +1,6 @@
 # Manual técnico · Karaoke Inteligente
 
-**Carné:** 202212978 · **Versión:** 1.0.0 · **Lenguaje:** Python 3.11+ · **Base de datos:** SQLite
+**Autor:** Edgar Alessandro Chocon Oliva · **Carné:** 202212978 · **Versión:** 1.0.0 · **Lenguaje:** Python 3.11+ · **Base de datos:** SQLite
 
 Este documento explica cómo está construido el programa y cómo se resolvió el modo automático. También reúne **todo lo necesario para que el docente lo ponga a funcionar** y las **suposiciones** que se hicieron donde la especificación dejaba decisiones abiertas.
 
@@ -21,6 +21,7 @@ Este documento explica cómo está construido el programa y cómo se resolvió e
 11. [Versión para Android](#11-versión-para-android)
 12. [Suposiciones y decisiones de diseño](#12-suposiciones-y-decisiones-de-diseño)
 13. [Limitaciones conocidas y mejoras futuras](#13-limitaciones-conocidas-y-mejoras-futuras)
+14. [Derechos de autor de las canciones de ejemplo](#derechos-de-autor-de-las-canciones-de-ejemplo)
 
 ---
 
@@ -301,7 +302,7 @@ Si se acumulan 14 palabras (`palabras_cancion_nueva`) sin que ninguna canción a
 
 ## 7. Evaluación con canciones reales
 
-Se probó con dos canciones **del propio autor** (generadas con Suno, sin problemas de derechos de autor), que se incluyen en `ejemplos/`:
+Se probó con dos canciones **escritas por el autor del proyecto** (audio producido con Suno), que se incluyen en `ejemplos/`. Sus derechos se describen al final de este manual:
 
 - *Sound of You*: 3:07, inglés.
 - *Ghost of you (Remastered)*: 2:09, inglés con versos en español.
@@ -472,3 +473,13 @@ El ejecutable busca `karaoke.ini`, `CANCIONES.db`, `PROGRAMA.txt` y `modelo/` **
 - **Vosk solo tiene modelos pequeños en algunos idiomas.** Las líneas en español de una canción en inglés no las reconoce el canal restringido de Vosk en inglés; las cubren Whisper y la predicción por tempo.
 - **Whisper en una CPU lenta** puede tardar más que la ventana de 6 s. El programa descarta ventanas para no retrasarse, y Vosk sigue funcionando.
 - **Interfaz gráfica:** la versión actual es de consola. Está prevista una interfaz gráfica y una versión web.
+
+---
+
+## Derechos de autor de las canciones de ejemplo
+
+Las letras de las canciones **"Sound of You"** y **"Ghost of you"** son obra original de **Edgar Alessandro Chocon Oliva** (carné 202212978), igual que las grabaciones `ejemplos/Sound_of_You.mp3` y `ejemplos/Ghost_of_you_Remastered.mp3`, que el autor produjo con la herramienta Suno.
+
+© 2026 Edgar Alessandro Chocon Oliva. **Todos los derechos reservados.**
+
+Se incluyen en este proyecto **únicamente como material de ejemplo y de prueba** del Karaoke Inteligente. No se autoriza copiarlas, distribuirlas, interpretarlas públicamente ni usarlas con otro fin sin el permiso escrito del autor. La licencia del código del programa no se extiende a estas letras ni a estos audios.

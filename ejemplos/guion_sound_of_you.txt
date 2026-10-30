@@ -1,3 +1,4 @@
+// © 2026 Edgar Alessandro Chocon Oliva. Fragmentos de la letra de "Sound of You".
 // Guion para el motor "simulado": minutos:segundos y lo que se canta.
 // Los tiempos son los que transcribió Whisper de Sound_of_You.mp3.
 0:21 I heard the sound of you everything

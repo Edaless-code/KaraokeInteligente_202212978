@@ -1,3 +1,6 @@
+// © 2026 Edgar Alessandro Chocon Oliva. Letras originales, todos los derechos reservados.
+// Se incluyen solo como ejemplo del Karaoke Inteligente. Ver ejemplos/DERECHOS_DE_AUTOR.md
+
 Sound of You
 I heard  the sound of  you,
 in every thing I do
