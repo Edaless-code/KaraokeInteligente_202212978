@@ -110,6 +110,13 @@ def tiempos_de_lineas(lineas: list[str], oidas: list[PalabraConTiempo],
                       duracion: float | None = None) -> list[float]:
     """Segundo en que empieza cada línea de ``lineas`` según las palabras con
     tiempo que escuchó la IA."""
+    return sincronia(lineas, oidas, duracion)[0]
+
+
+def sincronia(lineas: list[str], oidas: list[PalabraConTiempo],
+              duracion: float | None = None) -> tuple[list[float], list[bool]]:
+    """Como ``tiempos_de_lineas`` y además, por línea, si su tiempo salió
+    directo de lo que oyó la IA (True) o se calculó entre sus vecinas."""
     letra: list[str] = []
     linea_de: list[int] = []
     for numero, linea in enumerate(lineas):
@@ -130,7 +137,9 @@ def tiempos_de_lineas(lineas: list[str], oidas: list[PalabraConTiempo],
     for k, j in enumerate(pareja):
         if j is not None and inicios[linea_de[k]] is None:
             inicios[linea_de[k]] = tiempo_de[j]
-    return _completar(inicios, lineas, duracion or (oidas[-1].fin if oidas else 0.0))
+    directas = [t is not None for t in inicios]
+    tiempos = _completar(inicios, lineas, duracion or (oidas[-1].fin if oidas else 0.0))
+    return tiempos, directas
 
 
 def _completar(inicios: list[float | None], lineas: list[str], duracion: float) -> list[float]:

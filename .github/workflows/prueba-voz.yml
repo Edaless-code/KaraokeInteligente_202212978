@@ -97,7 +97,7 @@ jobs:
       fail-fast: false
       matrix:
         audio: [ejemplos/Sound_of_You.mp3, ejemplos/Ghost_of_you_Remastered.mp3]
-        modelo: [small]
+        modelo: [small, medium, large-v3-turbo]
         aislar: [""]
     name: Letra desde audio · ${{ matrix.modelo }} ${{ matrix.aislar }} · ${{ matrix.audio }}
     steps:

@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from karaoke.alineacion import PalabraConTiempo, sincronia  # noqa: E402
 from karaoke.audio.desde_audio import crear_borrador  # noqa: E402
 from karaoke.config import cargar_config  # noqa: E402
 from karaoke.importador import analizar_texto  # noqa: E402
@@ -49,9 +50,20 @@ def main() -> int:
     if referencia:
         real = palabras(" ".join(referencia[1]))
         obtenido = palabras(" ".join(borrador.lineas))
-        parecido = difflib.SequenceMatcher(None, real, obtenido, autojunk=False).ratio()
-        print(f"\nParecido con la letra real de «{referencia[0]}»: {parecido:.0%} "
+        comparacion = difflib.SequenceMatcher(None, real, obtenido, autojunk=False)
+        iguales = sum(b.size for b in comparacion.get_matching_blocks())
+        print(f"\nParecido con la letra real de «{referencia[0]}»: {comparacion.ratio():.0%} "
               f"({len(obtenido)} palabras transcritas, {len(real)} en la letra)")
+        print(f"  Palabras de la letra que la IA escribió bien: {iguales / max(1, len(real)):.0%} · "
+              f"palabras escritas que son de la letra: {iguales / max(1, len(obtenido)):.0%}")
+
+        # Sincronía: la letra real con los tiempos de lo que oyó la IA.
+        oidas = [PalabraConTiempo(p.texto, p.inicio, p.fin) for p in borrador.palabras]
+        tiempos, directas = sincronia(referencia[1], oidas, borrador.duracion)
+        print(f"\nLetra real sincronizada con la pista ({sum(directas)} de {len(directas)} líneas "
+              f"con tiempo directo de la IA = {sum(directas) / max(1, len(directas)):.0%}):")
+        for linea, tiempo, directa in zip(referencia[1], tiempos, directas):
+            print(f"  [{int(tiempo // 60)}:{tiempo % 60:04.1f}]{' ' if directa else '~'} {linea}")
     return 0 if borrador.lineas else 1
 
 
