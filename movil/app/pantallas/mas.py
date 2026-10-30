@@ -393,6 +393,54 @@ class Ajustes(ListaSimple):
         caja.add_widget(demostracion)
         caja.add_widget(Texto(tipo="nota", tono=T.TEXTO_3, padding=(T.ESP["m"], T.ESP["s"]),
                               text="La demostración sigue Sound of You con un guion, sin usar el micrófono."))
+        from kivy.utils import platform
+
+        if platform != "android":
+            self._fila_microfono(caja, config)
+
+    def _fila_microfono(self, caja, config):
+        """Computadora: ver y elegir el micrófono (el mismo ajuste que la
+        opción d de la consola: [audio] dispositivo en karaoke.ini)."""
+        try:
+            from karaoke.audio.fuentes import listar_microfonos, microfono_predeterminado
+
+            microfonos = listar_microfonos()
+            predeterminado = microfono_predeterminado()
+        except Exception as ex:
+            caja.add_widget(Texto(tipo="nota", tono=T.AVISO, padding=(T.ESP["m"], T.ESP["s"]),
+                                  text=f"No se pueden leer los micrófonos: {ex}"))
+            return
+        nombres = {indice: nombre for indice, nombre, _, _ in microfonos}
+
+        def actual() -> str:
+            elegido = config.texto("audio", "dispositivo").strip()
+            if elegido.isdigit() and int(elegido) in nombres:
+                return nombres[int(elegido)]
+            return f"Predeterminado ({nombres.get(predeterminado, 'ninguno')})"
+
+        fila = FilaOpcion(icono="microphone", texto="Micrófono", valor=actual()[:38])
+
+        def elegir(*_):
+            dialogo = Dialogo(titulo="Elegir el micrófono", icono="microphone",
+                              mensaje="Se usa en el modo automático. Canta cerca del micrófono "
+                                      "y, si puedes, escucha la música con audífonos.")
+
+            def guardar(valor):
+                config.establecer("audio", "dispositivo", valor)
+                config.guardar()
+                fila.valor = actual()[:38]
+                self.app.avisar("Micrófono guardado")
+
+            dialogo.agregar_boton("Predeterminado de Windows", "secundario", lambda: guardar(""))
+            for indice, nombre in nombres.items():
+                dialogo.agregar_boton(nombre[:40], "fantasma", lambda i=indice: guardar(str(i)))
+            dialogo.open()
+
+        fila.bind(on_release=elegir)
+        caja.add_widget(fila)
+        if not microfonos:
+            caja.add_widget(Texto(tipo="nota", tono=T.AVISO, padding=(T.ESP["m"], T.ESP["s"]),
+                                  text="No se encontró ningún micrófono conectado."))
 
 
 class AcercaDe(ListaSimple):
