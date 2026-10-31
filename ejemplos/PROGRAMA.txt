@@ -1,0 +1,5 @@
+// Programa tentativo del cantante: una canción por renglón, en el orden en
+// que piensa cantarlas. El orden es flexible: durante la sesión se puede
+// adelantar, repetir o saltar canciones.
+1. Sound of You
+2. Ghost of you

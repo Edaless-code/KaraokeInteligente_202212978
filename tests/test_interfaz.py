@@ -140,3 +140,12 @@ def test_las_canciones_siguen_ahi_al_volver_a_abrir(carpeta):
     salida = ejecutar(carpeta, ["w", "", "s"])        # se vuelve a abrir el programa
     assert "Base de datos CANCIONES encontrada" in salida or "creada" not in salida
     assert "Sound of You" in salida and "Ghost of you" in salida
+
+
+def test_programa_de_ejemplo_si_no_existe_el_archivo(carpeta):
+    (carpeta / "ejemplos").mkdir()
+    shutil.copy(RAIZ / "ejemplos" / "PROGRAMA.txt", carpeta / "ejemplos" / "PROGRAMA.txt")
+    salida = ejecutar(carpeta, ["f", "t", "", "", "r", "p", "c", "", "s", "", "r", "s"])
+    assert "No se encontró el archivo" in salida
+    assert consulta(carpeta, "SELECT nombre_solicitado FROM PROGRAMA ORDER BY orden") == [
+        ("Sound of You",), ("Ghost of you",)]

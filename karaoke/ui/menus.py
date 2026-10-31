@@ -502,9 +502,15 @@ class Aplicacion:
         texto = self.preguntar(f"Ruta del archivo [{predeterminado}]: ").strip('"')
         ruta = Path(texto) if texto else predeterminado
         if not ruta.exists():
-            consola.error(f"No se encontró el archivo {ruta}")
-            self.teclado.pausa()
-            return
+            ejemplo = self.config.carpeta / "ejemplos" / "PROGRAMA.txt"
+            consola.aviso(f"No se encontró el archivo {ruta}")
+            if ejemplo.exists() and self.teclado.confirmar("¿Usar el programa de ejemplo (ejemplos/PROGRAMA.txt)?"):
+                ruta = ejemplo
+            elif self.teclado.confirmar("¿Escribir el programa aquí mismo?"):
+                self.escribir_programa()
+                return
+            else:
+                return
         nombres = leer_programa(ruta)
         if not nombres:
             consola.aviso("El archivo no tiene canciones.")
