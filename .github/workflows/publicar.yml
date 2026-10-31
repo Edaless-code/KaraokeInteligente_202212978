@@ -18,8 +18,11 @@ jobs:
   android:
     uses: ./.github/workflows/android-apk.yml
 
+  escritorio:
+    uses: ./.github/workflows/escritorio.yml
+
   publicar:
-    needs: [windows, android]
+    needs: [windows, android, escritorio]
     if: always() && needs.windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -34,6 +37,19 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Unir la versión de escritorio al ZIP de Windows
+        # Un solo ZIP con KaraokeInteligente.exe (consola) y KaraokeEscritorio.exe
+        # (interfaz gráfica) en la misma carpeta: comparten canciones y modelos.
+        if: hashFiles('dist/KaraokeEscritorio-Windows.zip') != ''
+        run: |
+          cd dist
+          mkdir unido && cd unido
+          unzip -q ../KaraokeInteligente-Windows.zip
+          unzip -q -o ../KaraokeEscritorio-Windows.zip -d KaraokeInteligente
+          rm ../KaraokeInteligente-Windows.zip ../KaraokeEscritorio-Windows.zip
+          zip -qr -9 ../KaraokeInteligente-Windows.zip KaraokeInteligente
+          cd .. && rm -rf unido
 
       - name: Archivos que se publican
         run: ls -la dist
@@ -51,7 +67,7 @@ jobs:
 
             | Archivo | Plataforma | Cómo usarlo |
             |---|---|---|
-            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir y abrir `KaraokeInteligente.exe`. Incluye los modelos de voz (funciona sin internet). |
+            | `KaraokeInteligente-Windows.zip` | Windows 10/11 (64 bits) | Descomprimir. `KaraokeInteligente.exe` es la versión de consola y `KaraokeEscritorio.exe` la de interfaz gráfica (comparten canciones). Incluye los modelos de voz (funciona sin internet). |
             | `KaraokeInteligente-Android.apk` | Android 7.0 o superior | Abrir el archivo en el teléfono y permitir la instalación. |
 
             Instrucciones completas en el [README](https://github.com/${{ github.repository }}#readme) y en `docs/`.

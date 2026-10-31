@@ -71,6 +71,8 @@ En la misma carpeta está **`KaraokeEscritorio.exe`**. Usa la misma base de dato
 - **Isla de controles:** en el escenario, los controles flotan en una barra semitransparente.
 - **Reproducir con letra:** en *Biblioteca*, elija una canción con pista y toque **Reproducir con letra**. Controles: **−5 s**, **Voz** (100 → 75 → 50 → 25 %), **+5 s**, **Inicio** y **Pausa**. Tocar la letra también pausa; deslizar a los lados mueve 5 segundos.
 - El primer uso carga las canciones de ejemplo con sus pistas.
+- **Biblioteca:** filtros arriba (*Todas, Favoritas* y cada género). En cada canción: corazón para favorita, **Género** y **Agregar portada**.
+- **Ajustes → Micrófono:** lista completa de micrófonos y opción **Automático** (usa el primero que capta sonido).
 
 ### Opción B: desde el código fuente (Python)
 
@@ -171,6 +173,7 @@ En cada menú se escribe la letra de la opción y se presiona **Enter**. El men�
 | **x** | Ver una letra | Se ingresa el código y se despliega la letra de 10 en 10 |
 | **u** | Corregir | Corregir la letra de una canción por nombre o código |
 | **b** | Borrar | Borrar una canción y su letra, con confirmación |
+| **g** | Favoritas y géneros *(agregada)* | Marcar favoritas, poner género o carpeta y una imagen de portada a cada canción |
 | **h** | Historial *(agregada)* | Canciones más cantadas y últimas interpretaciones |
 | **d** | Diagnóstico de audio *(agregada)* | Elegir el micrófono y probar la limpieza del sonido |
 | **k** | Configuración *(agregada)* | Ver los valores actuales y dónde se cambian |
@@ -488,3 +491,10 @@ Las letras de las canciones **"Sound of You"** y **"Ghost of you"** son obra ori
 © 2026 Edgar Alessandro Chocon Oliva. **Todos los derechos reservados.**
 
 Se incluyen en este proyecto **únicamente como material de ejemplo y de prueba** del Karaoke Inteligente. No se autoriza copiarlas, distribuirlas, interpretarlas públicamente ni usarlas con otro fin sin el permiso escrito del autor. La licencia del código del programa no se extiende a estas letras ni a estos audios.
+
+
+## Novedades de la versión 1.1
+
+- **Micrófono automático:** en *d → e* (consola) o *Ajustes → Micrófono* (escritorio) se ven todos los micrófonos con su sistema de audio. Con **Enter / Automático** el programa prueba los micrófonos y usa el primero que de verdad capta sonido; si el elegido se desconecta, cambia solo a otro.
+- **Favoritas, géneros y portadas (g):** marque favoritas (★ en la lista *w*), agrupe por género o carpeta y elija una imagen JPG/PNG de portada (se copia a la carpeta `portadas/`).
+- **Programa de ejemplo:** si no existe `PROGRAMA.txt`, el programa ofrece usar `ejemplos/PROGRAMA.txt` o escribir el programa en ese momento.
