@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from kivy.logger import Logger
@@ -23,6 +24,7 @@ class Reproduccion:
         self._pausa_en = 0.0
         self.pausado = False
         self._iniciada = False
+        self._inicio = 0.0  # reloj propio: en Android get_pos() devuelve siempre 0
         try:
             from karaoke.audio.reproductor import Reproductor
 
@@ -56,13 +58,17 @@ class Reproduccion:
             return self._nucleo.segundo
         if self.pausado:
             return self._pausa_en
-        return float(self._sonido.get_pos() or 0.0)
+        posicion = float(self._sonido.get_pos() or 0.0)
+        if posicion > 0:
+            return posicion
+        return max(0.0, time.monotonic() - self._inicio) if self._iniciada else 0.0
 
     @property
     def terminada(self) -> bool:
         if self._nucleo is not None:
             return self._nucleo.terminada
-        return self._sonido.state == "stop" and not self.pausado and self.segundo <= 0.01 and self._iniciada
+        return (self._iniciada and not self.pausado and self._sonido.state == "stop"
+                and self.segundo > 1.0)
 
     # ------------------------------------------------------------- control
     def iniciar(self) -> None:
@@ -71,6 +77,7 @@ class Reproduccion:
             self._nucleo.iniciar()
         else:
             self._sonido.play()
+        self._inicio = time.monotonic()
         self._iniciada = True
 
     def alternar_pausa(self) -> None:
@@ -81,6 +88,7 @@ class Reproduccion:
         if self.pausado:
             self._sonido.play()
             self._sonido.seek(self._pausa_en)
+            self._inicio = time.monotonic() - self._pausa_en
         else:
             self._pausa_en = self.segundo
             self._sonido.stop()
@@ -90,7 +98,9 @@ class Reproduccion:
         if self._nucleo is not None:
             self._nucleo.mover(segundos)
         else:
-            self._sonido.seek(max(0.0, self.segundo + segundos))
+            destino = max(0.0, self.segundo + segundos)
+            self._sonido.seek(destino)
+            self._inicio = time.monotonic() - destino
 
     def siguiente_nivel_voz(self) -> float:
         """100 → 75 → 50 → 25 → 100 %."""
