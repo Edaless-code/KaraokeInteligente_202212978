@@ -147,6 +147,10 @@ ICONO = {
     "playlist-play": "\U000F0411",
     "home-outline": "\U000F06A1",
     "music-note-outline": "\U000F0F74",
+    "heart": "\U000F08D0",
+    "heart-outline": "\U000F18A0",
+    "image-outline": "\U000F0976",
+    "tag-outline": "\U000F04FC",
 }
 
 

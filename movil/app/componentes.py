@@ -548,6 +548,16 @@ class Chip(Label):
     tono = ColorProperty(T.TEXTO_2)
 
 
+class ChipBoton(ButtonBehavior, Chip):
+    """Chip que se puede tocar (filtros de la biblioteca, género)."""
+
+    activo = BooleanProperty(False)
+
+    def on_activo(self, *_):
+        self.fondo = T.ACENTO if self.activo else T.SUPERFICIE_ALTA
+        self.tono = T.color("#F3F6FC") if self.activo else T.TEXTO_2
+
+
 class FilaCancion(ButtonBehavior, BoxLayout):
     insignia = StringProperty("")
     titulo = StringProperty("")

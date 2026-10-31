@@ -38,6 +38,16 @@ Builder.load_string("""
             multiline: False
             on_text: root.buscar(self.text)
         ScrollView:
+            do_scroll_y: False
+            size_hint_y: None
+            height: dp(30)
+            bar_width: 0
+            BoxLayout:
+                id: filtros
+                size_hint_x: None
+                width: self.minimum_width
+                spacing: T.ESP["s"]
+        ScrollView:
             do_scroll_x: False
             BoxLayout:
                 id: lista
@@ -88,6 +98,13 @@ Builder.load_string("""
                 on_release: app.atras()
             Widget:
             BotonIcono:
+                icono: "heart" if root.favorita else "heart-outline"
+                fondo: 0, 0, 0, 0
+                tinta: T.ACENTO_TEXTO if root.favorita else T.TEXTO_2
+                lado: dp(44)
+                pos_hint: {"center_y": .5}
+                on_release: root.alternar_favorita()
+            BotonIcono:
                 icono: "pencil"
                 fondo: 0, 0, 0, 0
                 lado: dp(44)
@@ -108,6 +125,13 @@ Builder.load_string("""
                 spacing: T.ESP["m"]
                 size_hint_y: None
                 height: self.minimum_height
+                AsyncImage:
+                    source: root.portada
+                    size_hint: None, None
+                    size: (dp(150), dp(150)) if root.portada else (0, 0)
+                    opacity: 1 if root.portada else 0
+                    allow_stretch: True
+                    keep_ratio: True
                 Texto:
                     tipo: "mini"
                     tono: T.ACENTO_TEXTO
@@ -125,6 +149,17 @@ Builder.load_string("""
                         text: root.chip_idioma
                     Chip:
                         text: root.chip_veces
+                    Widget:
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(26)
+                    spacing: T.ESP["s"]
+                    ChipBoton:
+                        text: "Género: " + (root.genero or "ninguno")
+                        on_release: root.cambiar_genero()
+                    ChipBoton:
+                        text: "Cambiar portada" if root.portada else "Agregar portada"
+                        on_release: root.elegir_portada()
                     Widget:
                 Boton:
                     texto: "Reproducir con letra"
@@ -152,7 +187,10 @@ POR_PAGINA = 10
 
 
 class Biblioteca(Pantalla):
+    """Con filtros arriba: Todas, Favoritas y cada género o carpeta."""
+
     resumen = StringProperty("")
+    filtro = StringProperty("")  # "" todas · "★" favoritas · otro texto = género
     pagina = NumericProperty(0)
     paginas = NumericProperty(1)
     rango = StringProperty("")
@@ -161,7 +199,26 @@ class Biblioteca(Pantalla):
         self.refrescar()
 
     def refrescar(self):
+        self._dibujar_filtros()
         self.buscar(self.ids.busqueda.text)
+
+    def _dibujar_filtros(self):
+        from ..componentes import ChipBoton
+
+        caja = self.ids.filtros
+        caja.clear_widgets()
+        generos = [g for g, _ in self.app.bd.generos()]
+        if self.filtro not in ("", "★") and self.filtro not in generos:
+            self.filtro = ""
+        for valor, texto in [("", "Todas"), ("★", "Favoritas")] + [(g, g) for g in generos]:
+            chip = ChipBoton(text=texto)
+            chip.activo = valor == self.filtro
+            chip.bind(on_release=lambda c, v=valor: self._elegir_filtro(v))
+            caja.add_widget(chip)
+
+    def _elegir_filtro(self, valor: str):
+        self.filtro = valor
+        self.refrescar()
 
     def buscar(self, texto: str):
         bd = self.app.bd
@@ -177,6 +234,12 @@ class Biblioteca(Pantalla):
         else:
             self._resultados = bd.listar_canciones()
             self._mensaje_vacio = "Aún no hay canciones. Toca + para agregarlas."
+        if self.filtro:
+            permitidos = {c for c, _, _ in (bd.listar_filtradas(favoritas=True) if self.filtro == "★"
+                                             else bd.listar_filtradas(genero=self.filtro))}
+            self._resultados = [f for f in self._resultados if f[0] in permitidos]
+            self._mensaje_vacio = ("Aún no hay favoritas: toca el corazón en una canción." if self.filtro == "★"
+                                   else f"No hay canciones en «{self.filtro}».")
         total = bd.contar_canciones()
         self.resumen = f"{total} canción" if total == 1 else f"{total} canciones"
         self.pagina = 0
@@ -199,10 +262,13 @@ class Biblioteca(Pantalla):
                                    alineacion="center", padding=(0, T.ESP["xxl"])))
             return
         idiomas = {c: x.idioma for c, x in self.app.bd.todas_las_letras().items()}
+        detalles = self.app.bd.detalles_listado()
         for codigo, nombre, lineas in visibles:
-            fila = FilaCancion(insignia=str(codigo), titulo=nombre,
-                               subtitulo=f"{lineas} líneas · {'Inglés' if idiomas.get(codigo) == 'en' else 'Español'}",
-                               dato=codigo)
+            favorita, genero = detalles.get(codigo, (False, ""))
+            partes = [f"{lineas} líneas", "Inglés" if idiomas.get(codigo) == "en" else "Español"]
+            partes += [genero] if genero else []
+            partes += ["Favorita"] if favorita else []
+            fila = FilaCancion(insignia=str(codigo), titulo=nombre, subtitulo=" · ".join(partes), dato=codigo)
             fila.bind(on_release=lambda f: self.app.abrir("detalle", codigo=f.dato))
             lista.add_widget(fila)
 
@@ -218,6 +284,9 @@ class DetalleCancion(Pantalla):
     chip_veces = StringProperty("")
     existe = BooleanProperty(True)
     con_pista = BooleanProperty(False)
+    favorita = BooleanProperty(False)
+    genero = StringProperty("")
+    portada = StringProperty("")
 
     def al_entrar(self, codigo: int = 0, **_):
         if codigo:
@@ -234,6 +303,9 @@ class DetalleCancion(Pantalla):
             self.chip_lineas = self.chip_idioma = self.chip_veces = ""
             return
         self.nombre = cancion.nombre
+        self.favorita, self.genero = cancion.favorita, cancion.genero or ""
+        imagen = self.app.carpeta / cancion.portada if cancion.portada else None
+        self.portada = str(imagen) if imagen and imagen.exists() else ""
         archivo = self.app.bd.obtener_pista(cancion.codigo)
         self.con_pista = bool(archivo) and (self.app.carpeta / archivo).exists()
         self.antetitulo = f"CÓDIGO {cancion.codigo}"
@@ -246,6 +318,88 @@ class DetalleCancion(Pantalla):
                                   text=f"LÍNEAS {inicio + 1}–{inicio + len(grupo)}"))
             for numero, linea in enumerate(grupo, inicio + 1):
                 caja.add_widget(FilaLetra(numero=str(numero), texto=linea))
+
+    # ------------------------------------------ favorita, género y portada
+    def alternar_favorita(self):
+        self.app.bd.marcar_favorita(self.codigo, not self.favorita)
+        self.app.datos_cambiaron()
+        self.app.avisar("Agregada a favoritas" if self.favorita else "Quitada de favoritas")
+
+    def cambiar_genero(self):
+        from ..componentes import Campo, Dialogo
+
+        dialogo = Dialogo(titulo="Género o carpeta", icono="tag-outline",
+                          mensaje="Por ejemplo: Pop, Baladas, Mis canciones. Vacío para quitarlo.")
+        campo = Campo(text=self.genero, multiline=False, hint_text="Género o carpeta")
+        dialogo.ids.botones.add_widget(campo)
+
+        def guardar():
+            self.app.bd.establecer_genero(self.codigo, campo.text.strip())
+            self.app.datos_cambiaron()
+
+        dialogo.agregar_boton("Guardar", "primario", guardar)
+        dialogo.agregar_boton("Cancelar", "fantasma")
+        dialogo.open()
+
+    def elegir_portada(self):
+        from kivy.utils import platform
+
+        def usar(rutas):
+            if not rutas:
+                return
+            from kivy.clock import Clock
+
+            Clock.schedule_once(lambda *_: self._guardar_portada(rutas[0]), 0)
+
+        if platform == "android":
+            try:
+                from plyer import filechooser
+
+                filechooser.open_file(on_selection=usar, filters=["*.jpg", "*.jpeg", "*.png", "*.webp"])
+            except Exception as ex:
+                self.app.avisar(f"No se pudo abrir la galería: {ex}", "error")
+            return
+        self._selector_escritorio(usar)
+
+    def _selector_escritorio(self, usar):
+        from pathlib import Path
+
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.modalview import ModalView
+
+        from ..componentes import Boton
+
+        ventana = ModalView(size_hint=(0.9, 0.85), background_color=(0, 0, 0, 0), overlay_color=T.VELO)
+        caja = BoxLayout(orientation="vertical", spacing=T.ESP["s"], padding=T.ESP["m"])
+        selector = FileChooserListView(path=str(Path.home()),
+                                       filters=["*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.PNG"])
+        botones = BoxLayout(size_hint_y=None, height=T.ALTO_BOTON, spacing=T.ESP["s"])
+        elegir = Boton(texto="Usar esta imagen", icono="image-outline")
+        cancelar = Boton(texto="Cancelar", estilo="fantasma")
+        elegir.bind(on_release=lambda *_: (ventana.dismiss(), usar(selector.selection)))
+        cancelar.bind(on_release=lambda *_: ventana.dismiss())
+        botones.add_widget(cancelar)
+        botones.add_widget(elegir)
+        caja.add_widget(selector)
+        caja.add_widget(botones)
+        ventana.add_widget(caja)
+        ventana.open()
+
+    def _guardar_portada(self, ruta: str):
+        from pathlib import Path
+
+        from karaoke.portadas import guardar_portada
+
+        try:
+            relativa = guardar_portada(self.app.carpeta, self.codigo, Path(ruta))
+        except (OSError, ValueError) as ex:
+            self.app.avisar(f"No se pudo guardar: {ex}", "error")
+            return
+        self.app.bd.establecer_portada(self.codigo, relativa)
+        self.portada = ""  # fuerza recargar la imagen nueva
+        self.app.datos_cambiaron()
+        self.app.avisar("Portada guardada")
 
     def borrar(self):
         def hacer():
