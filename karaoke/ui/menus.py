@@ -42,6 +42,7 @@ SECCIONES_MENU = [
         ("f", "Agregar canciones", "desde texto, escribiéndolas o desde MP3"),
         ("u", "Corregir una letra", "por nombre o código"),
         ("b", "Borrar una canción", "con confirmación; se puede recuperar"),
+        ("g", "Favoritas y géneros", "marcar favoritas, carpetas y portadas"),
     ]),
     ("SESIÓN", [
         ("p", "Programa del cantante", "archivo PROGRAMA y su avance"),
@@ -114,6 +115,7 @@ class Aplicacion:
             "m": self.modo_manual,
             "a": self.modo_automatico,
             "r": self.reproducir,
+            "g": self.colecciones,
             "f": self.menu_alimentacion,
             "p": self.menu_programa,
             "w": self.ver_canciones,
@@ -154,6 +156,11 @@ class Aplicacion:
                 print(f"    {color(tecla, 'negrita', 'cian')}   {texto:<24}" + color(explicacion, "tenue"))
         print()
 
+    def colecciones(self) -> None:
+        from .colecciones import Colecciones
+
+        Colecciones(self).ejecutar()
+
     def reproducir(self) -> None:
         from .reproducir import ReproducirConLetra
 
@@ -182,8 +189,12 @@ class Aplicacion:
             consola.aviso("La base de datos no tiene canciones. Use (f) para agregarlas.")
             self.teclado.pausa()
             return
-        renglones = [f"  {'CÓDIGO':>6}  {'NOMBRE DE LA CANCIÓN':<50} LÍNEAS"]
-        datos = [f"  {c:>6}  {n[:50]:<50} {l:>6}" for c, n, l in canciones]
+        renglones = [f"  {'CÓDIGO':>6}  {'NOMBRE DE LA CANCIÓN':<50} LÍNEAS  GÉNERO"]
+        detalles = self.bd.detalles_listado()
+        datos = []
+        for c, n, l in canciones:
+            favorita, genero = detalles.get(c, (False, ""))
+            datos.append(f"  {c:>6}  {(('★ ' if favorita else '') + n)[:50]:<50} {l:>6}  {genero}")
         paginar(datos, self.config.por_pagina, self.teclado,
                 f"Canciones registradas ({len(canciones)})\n{renglones[0]}")
 

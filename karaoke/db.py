@@ -587,6 +587,11 @@ class BaseDatos:
             c.execute("UPDATE NOMBRES SET portada = ? WHERE codigo = ?",
                       (limpiar_texto(portada, 500) if portada else None, codigo))
 
+    def detalles_listado(self) -> dict[int, tuple[bool, str]]:
+        """código -> (favorita, género) para mostrarlos en las listas."""
+        return {f[0]: (bool(f[1]), f[2]) for f in self.conexion.execute(
+            "SELECT codigo, favorita, genero FROM NOMBRES WHERE eliminada_en IS NULL")}
+
     def generos(self) -> list[tuple[str, int]]:
         """(género o carpeta, número de canciones), sin las que no tienen."""
         return [tuple(f) for f in self.conexion.execute(

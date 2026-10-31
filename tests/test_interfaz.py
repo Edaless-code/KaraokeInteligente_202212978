@@ -149,3 +149,15 @@ def test_programa_de_ejemplo_si_no_existe_el_archivo(carpeta):
     assert "No se encontró el archivo" in salida
     assert consulta(carpeta, "SELECT nombre_solicitado FROM PROGRAMA ORDER BY orden") == [
         ("Sound of You",), ("Ghost of you",)]
+
+
+def test_favoritas_generos_y_portadas(carpeta):
+    imagen = carpeta / "portada.png"
+    imagen.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    salida = ejecutar(carpeta, ["f", "t", "", "", "r",
+                                "g", "c", "1", "v", "g", "Pop", "i", str(imagen), "", "r", "r",
+                                "w", "", "s"])
+    assert consulta(carpeta, "SELECT favorita, genero, portada FROM NOMBRES WHERE codigo = 1") == [
+        (1, "Pop", "portadas/001.png")]
+    assert (carpeta / "portadas" / "001.png").exists()
+    assert "★ Sound of You" in salida
