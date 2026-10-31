@@ -20,7 +20,11 @@ ocultos = collect_submodules("karaoke") + [
     "app.pantallas", "app.pantallas.base", "app.pantallas.inicio", "app.pantallas.biblioteca",
     "app.pantallas.programa", "app.pantallas.mas", "app.pantallas.editor", "app.pantallas.escenario",
 ]
-for paquete in ("faster_whisper", "ctranslate2"):
+import os
+
+# VARIANTE=sin_whisper deja fuera a Whisper (la consola, en la misma carpeta, lo trae).
+CON_WHISPER = os.environ.get("VARIANTE", "completa") != "sin_whisper"
+for paquete in (("faster_whisper", "ctranslate2") if CON_WHISPER else ()):
     d, b, h = collect_all(paquete)
     datas += d
     binaries += b
@@ -41,6 +45,8 @@ kivy_ocultos = [
     "kivy.uix.screenmanager",
 ]
 kivy_excluir = ["kivy.core.video", "kivy.core.camera", "cv2", "gi", "ffpyplayer", "gst", "enchant"]
+if not CON_WHISPER:
+    kivy_excluir += ["faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers", "huggingface_hub"]
 
 a = Analysis(
     ["movil/main.py"],
