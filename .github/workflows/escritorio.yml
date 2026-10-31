@@ -27,8 +27,19 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt faster-whisper pyinstaller kivy==2.3.1 pillow
       - name: Empaquetar
-        timeout-minutes: 25
-        run: pyinstaller --noconfirm --clean --log-level DEBUG --distpath dist-escritorio escritorio.spec 2>&1 | Select-Object -Last 120
+        timeout-minutes: 20
+        env:
+          PYTHONUNBUFFERED: "1"
+          KIVY_NO_ARGS: "1"
+          KIVY_NO_CONSOLELOG: "1"
+        # El registro se escribe en vivo (y se sube aunque se corte) para ver dónde se detiene.
+        run: pyinstaller --noconfirm --clean --log-level INFO --distpath dist-escritorio escritorio.spec 2>&1 | Tee-Object -FilePath pyinstaller.log
+      - name: Registro del empaquetado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registro-pyinstaller
+          path: pyinstaller.log
       - name: Comprimir
         run: |
           Compress-Archive -Path dist-escritorio/KaraokeEscritorio/* -DestinationPath KaraokeEscritorio-Windows.zip
