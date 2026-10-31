@@ -399,48 +399,64 @@ class Ajustes(ListaSimple):
             self._fila_microfono(caja, config)
 
     def _fila_microfono(self, caja, config):
-        """Computadora: ver y elegir el micrófono (el mismo ajuste que la
-        opción d de la consola: [audio] dispositivo en karaoke.ini)."""
-        try:
-            from karaoke.audio.fuentes import listar_microfonos, microfono_predeterminado
+        """Computadora: lista completa de micrófonos y elección automática del
+        que funciona (el mismo ajuste que la opción d de la consola)."""
+        import threading
 
-            microfonos = listar_microfonos()
-            predeterminado = microfono_predeterminado()
+        from kivy.clock import Clock
+
+        try:
+            from karaoke.audio.fuentes import detectar_microfono, listar_microfonos_detalle
+
+            microfonos = listar_microfonos_detalle()
         except Exception as ex:
             caja.add_widget(Texto(tipo="nota", tono=T.AVISO, padding=(T.ESP["m"], T.ESP["s"]),
                                   text=f"No se pueden leer los micrófonos: {ex}"))
             return
-        nombres = {indice: nombre for indice, nombre, _, _ in microfonos}
+        nombres = {i: f"{n} · {sistema}" if sistema else n for i, n, sistema in microfonos}
+        fila = FilaOpcion(icono="microphone", texto="Micrófono", valor="Buscando el que funciona…")
+        nota = Texto(tipo="nota", tono=T.TEXTO_3, padding=(T.ESP["m"], T.ESP["s"]), text="")
 
-        def actual() -> str:
-            elegido = config.texto("audio", "dispositivo").strip()
-            if elegido.isdigit() and int(elegido) in nombres:
-                return nombres[int(elegido)]
-            return f"Predeterminado ({nombres.get(predeterminado, 'ninguno')})"
+        def detectar(*_):
+            def trabajar():
+                elegido = config.texto("audio", "dispositivo").strip()
+                try:
+                    indice, nombre = detectar_microfono(elegido or None)
+                    modo = "elegido" if elegido and elegido == str(indice) else "automático"
+                    texto, ayuda = nombre[:40], f"En uso ({modo}): {nombre}"
+                    if elegido and elegido != str(indice):
+                        ayuda += " · el elegido no funcionó, se usa este"
+                except Exception as ex:
+                    texto, ayuda = "Ninguno funciona", str(ex)
+                Clock.schedule_once(lambda *_: (setattr(fila, "valor", texto), setattr(nota, "text", ayuda)), 0)
 
-        fila = FilaOpcion(icono="microphone", texto="Micrófono", valor=actual()[:38])
+            threading.Thread(target=trabajar, daemon=True).start()
 
         def elegir(*_):
             dialogo = Dialogo(titulo="Elegir el micrófono", icono="microphone",
-                              mensaje="Se usa en el modo automático. Canta cerca del micrófono "
-                                      "y, si puedes, escucha la música con audífonos.")
+                              mensaje="«Automático» prueba los micrófonos y usa el primero que capta sonido. "
+                                      "Canta cerca del micrófono y escucha la música con audífonos.")
 
             def guardar(valor):
                 config.establecer("audio", "dispositivo", valor)
                 config.guardar()
-                fila.valor = actual()[:38]
+                fila.valor = "Comprobando…"
+                detectar()
                 self.app.avisar("Micrófono guardado")
 
-            dialogo.agregar_boton("Predeterminado de Windows", "secundario", lambda: guardar(""))
+            dialogo.agregar_boton("Automático (recomendado)", "primario", lambda: guardar(""))
             for indice, nombre in nombres.items():
-                dialogo.agregar_boton(nombre[:40], "fantasma", lambda i=indice: guardar(str(i)))
+                dialogo.agregar_boton(nombre[:46], "fantasma", lambda i=indice: guardar(str(i)))
             dialogo.open()
 
         fila.bind(on_release=elegir)
         caja.add_widget(fila)
-        if not microfonos:
-            caja.add_widget(Texto(tipo="nota", tono=T.AVISO, padding=(T.ESP["m"], T.ESP["s"]),
-                                  text="No se encontró ningún micrófono conectado."))
+        caja.add_widget(nota)
+        if microfonos:
+            detectar()
+        else:
+            fila.valor = "Ninguno"
+            nota.text = "No se encontró ningún micrófono conectado."
 
 
 class AcercaDe(ListaSimple):

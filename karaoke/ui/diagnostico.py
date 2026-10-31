@@ -19,7 +19,6 @@ from ..audio.fuentes import (
     FuenteAudio,
     FuenteHilo,
     FuenteMicrofono,
-    listar_microfonos,
     microfono_predeterminado,
 )
 from ..audio.limpieza import LimpiadorAudio
@@ -72,29 +71,50 @@ class Diagnostico:
                 consola.error(str(ex))
                 self.teclado.pausa()
 
-    def listar(self) -> list[tuple[int, str, int, int]]:
-        microfonos = listar_microfonos()
+    def listar(self) -> list[tuple[int, str, str]]:
+        """Lista completa: en Windows un micrófono aparece una vez por sistema
+        de audio (MME, DirectSound, WASAPI…); cualquiera de ellos sirve."""
+        from ..audio.fuentes import listar_microfonos_detalle
+
+        microfonos = listar_microfonos_detalle()
         predeterminado = microfono_predeterminado()
+        elegido = self.config.texto("audio", "dispositivo").strip()
         if not microfonos:
             consola.error("No se encontró ningún micrófono.")
-        for indice, nombre, canales, frecuencia in microfonos:
-            marca = " (predeterminado)" if indice == predeterminado else ""
-            print(f"  {indice:>3}. {nombre} · {canales} canal(es) · {frecuencia} Hz{marca}")
+        for indice, nombre, sistema in microfonos:
+            marcas = []
+            if indice == predeterminado:
+                marcas.append("predeterminado")
+            if elegido == str(indice):
+                marcas.append("elegido")
+            extra = color(f" ({', '.join(marcas)})", "cian") if marcas else ""
+            print(f"  {indice:>3}. {nombre} " + color(f"· {sistema}", "tenue") + extra)
         return microfonos
+
+    def detectar(self) -> None:
+        from ..audio.fuentes import detectar_microfono
+
+        print(color("  Probando los micrófonos…", "tenue"))
+        try:
+            indice, nombre = detectar_microfono(self.config.texto("audio", "dispositivo").strip() or None)
+            consola.exito(f"  En uso: [{indice}] {nombre}")
+        except ErrorAudio as ex:
+            consola.error(f"  {ex}")
 
     def elegir(self) -> None:
         microfonos = self.listar()
         if not microfonos:
             self.teclado.pausa()
             return
-        eleccion = self.app.preguntar("Número del micrófono (Enter = predeterminado): ")
+        eleccion = self.app.preguntar("Número del micrófono (Enter = automático, el primero que funcione): ")
         if eleccion and not (eleccion.isdigit() and int(eleccion) in [m[0] for m in microfonos]):
             consola.error("Número inválido.")
             self.teclado.pausa()
             return
         self.config.establecer("audio", "dispositivo", eleccion)
         ruta = self.config.guardar()
-        consola.exito(f"Micrófono guardado en {ruta}")
+        consola.exito(f"Guardado en {ruta}")
+        self.detectar()
         self.teclado.pausa()
 
     def medir(self, fuente: FuenteAudio) -> None:

@@ -58,6 +58,71 @@ def listar_microfonos() -> list[tuple[int, str, int, int]]:
     return microfonos
 
 
+def listar_microfonos_detalle(sd=None) -> list[tuple[int, str, str]]:
+    """(índice, nombre, sistema de audio) de cada micrófono. En Windows un
+    mismo micrófono aparece una vez por sistema (MME, DirectSound, WASAPI…)."""
+    sd = sd or _sounddevice()
+    sistemas = [h["name"] for h in sd.query_hostapis()]
+    return [(i, d["name"], sistemas[d["hostapi"]] if d["hostapi"] < len(sistemas) else "")
+            for i, d in enumerate(sd.query_devices()) if d["max_input_channels"] > 0]
+
+
+def probar_microfono(indice: int | None, sd=None, segundos: float = 0.4) -> float | None:
+    """Graba un momento con el micrófono. Devuelve el nivel (RMS) o ``None``
+    si no se pudo abrir."""
+    sd = sd or _sounddevice()
+    try:
+        info = sd.query_devices(indice, "input")
+        frecuencia = int(info["default_samplerate"]) or 16000
+        datos = sd.rec(int(frecuencia * segundos), samplerate=frecuencia, channels=1,
+                       dtype="float32", device=indice, blocking=True)
+        return float(np.sqrt(np.mean(np.square(datos)))) if len(datos) else 0.0
+    except Exception:
+        return None
+
+
+# Orden de preferencia de los sistemas de audio de Windows (los más estables primero).
+_SISTEMAS_PREFERIDOS = ("Windows WASAPI", "MME", "Windows DirectSound", "Windows WDM-KS")
+
+
+def detectar_microfono(preferido: int | str | None = None, sd=None) -> tuple[int | None, str]:
+    """Elige automáticamente un micrófono que funcione: primero el elegido por
+    el usuario, luego el predeterminado del sistema y después los demás. Se
+    queda con el primero que capta sonido (no solo ceros); si ninguno capta
+    nada, con el primero que se pudo abrir. Devuelve (índice, nombre)."""
+    sd = sd or _sounddevice()
+    microfonos = listar_microfonos_detalle(sd)
+    nombres = {i: f"{n} ({sistema})" if sistema else n for i, n, sistema in microfonos}
+    candidatos: list[int | None] = []
+    preferido = _interpretar_dispositivo(preferido)
+    if isinstance(preferido, int):
+        candidatos.append(preferido)
+    try:
+        predeterminado = sd.default.device[0]
+        if predeterminado is not None and predeterminado >= 0:
+            candidatos.append(int(predeterminado))
+    except Exception:
+        pass
+    orden = sorted(microfonos, key=lambda m: _SISTEMAS_PREFERIDOS.index(m[2])
+                   if m[2] in _SISTEMAS_PREFERIDOS else len(_SISTEMAS_PREFERIDOS))
+    candidatos += [i for i, _, _ in orden]
+    vistos, abierto = set(), None
+    for indice in candidatos:
+        if indice in vistos:
+            continue
+        vistos.add(indice)
+        nivel = probar_microfono(indice, sd)
+        if nivel is None:
+            continue
+        if abierto is None:
+            abierto = indice
+        if nivel > 1e-5:  # capta algo (un micrófono desconectado entrega ceros exactos)
+            return indice, nombres.get(indice, str(indice))
+    if abierto is not None:
+        return abierto, nombres.get(abierto, str(abierto))
+    raise ErrorAudio("No se encontró ningún micrófono que funcione en este equipo.")
+
+
 def microfono_predeterminado() -> int | None:
     try:
         entrada = _sounddevice().default.device[0]
@@ -108,7 +173,17 @@ class FuenteMicrofono(FuenteAudio):
         self.nombre = "micrófono"
 
     def iniciar(self) -> None:
+        try:
+            self._abrir(self.dispositivo)
+        except ErrorAudio:
+            # El elegido no funciona (desconectado, ocupado…): se busca otro solo.
+            indice, _ = detectar_microfono(self.dispositivo)
+            self._abrir(indice)
+            self.dispositivo = indice
+
+    def _abrir(self, dispositivo) -> None:
         sd = _sounddevice()
+        self.dispositivo = dispositivo
         try:
             info = sd.query_devices(self.dispositivo, "input")
         except (ValueError, sd.PortAudioError) as ex:
