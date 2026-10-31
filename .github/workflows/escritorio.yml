@@ -1,57 +1,94 @@
 name: Versión de escritorio (interfaz gráfica)
 
-# Se construye aparte de la versión de consola (la de la entrega) para que una
-# falla aquí nunca retrase el .exe principal.
+# La interfaz gráfica se arma con el Python portátil oficial (embeddable) y un
+# lanzador KaraokeEscritorio.exe. No se usa PyInstaller para ella: su análisis
+# de librerías ("Looking for dynamic libraries") se queda colgado con Kivy en
+# Windows. Se publica como un ZIP que se descomprime en la carpeta de la
+# versión de consola (comparten base de datos, modelos y pistas).
 on:
   push:
     branches: ["**"]
-    paths: ["escritorio.spec", "movil/app/**", "movil/main.py", ".github/workflows/escritorio.yml"]
+    paths: ["movil/app/**", "movil/main.py", "karaoke/**", "herramientas/lanzador_escritorio.py",
+            ".github/workflows/escritorio.yml"]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: escritorio-${{ github.ref }}
+  group: escritorio-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   escritorio:
-    strategy:
-      fail-fast: false
-      matrix:
-        variante: [completa, sin_whisper]
-    name: Escritorio · ${{ matrix.variante }}
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:
       run:
         shell: pwsh
+    env:
+      DESTINO: dist/KaraokeEscritorio
+      PYVER: "3.12.10"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt faster-whisper pyinstaller kivy==2.3.1 pillow
-      - name: Empaquetar
-        timeout-minutes: 20
-        env:
-          PYTHONUNBUFFERED: "1"
-          VARIANTE: ${{ matrix.variante }}
-          KIVY_NO_ARGS: "1"
-          KIVY_NO_CONSOLELOG: "1"
-        # El registro se escribe en vivo (y se sube aunque se corte) para ver dónde se detiene.
-        run: pyinstaller --noconfirm --clean --log-level INFO --distpath dist-escritorio escritorio.spec 2>&1 | Tee-Object -FilePath pyinstaller.log
-      - name: Registro del empaquetado
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: registro-pyinstaller-${{ matrix.variante }}
-          path: pyinstaller.log
+          python-version: "3.12.10"
+
+      - name: Python portátil
+        run: |
+          $ProgressPreference = "SilentlyContinue"
+          New-Item -ItemType Directory -Force "$env:DESTINO/escritorio/python" | Out-Null
+          curl.exe -sSL -o py.zip "https://www.python.org/ftp/python/$env:PYVER/python-$env:PYVER-embed-amd64.zip"
+          tar -xf py.zip -C "$env:DESTINO/escritorio/python"
+          # habilitar site-packages
+          $pth = Get-ChildItem "$env:DESTINO/escritorio/python" -Filter "python*._pth" | Select-Object -First 1
+          @("python312.zip", ".", "Lib\site-packages", "..\programa", "import site") | Set-Content $pth.FullName
+          Get-Content $pth.FullName
+
+      - name: Instalar Kivy y el audio en el Python portátil
+        # Con el propio Python portátil: así las DLL de Kivy (SDL2, GLEW, ANGLE)
+        # quedan en su carpeta share/, donde Kivy las busca.
+        run: |
+          $py = "$env:DESTINO/escritorio/python/python.exe"
+          curl.exe -sSL -o get-pip.py https://bootstrap.pypa.io/get-pip.py
+          & $py get-pip.py --no-warn-script-location
+          & $py -m pip install --no-warn-script-location kivy==2.3.1 numpy sounddevice miniaudio vosk faster-whisper
+          & $py -c "import kivy, numpy, sounddevice, vosk, faster_whisper; print('Kivy', kivy.__version__, 'listo')"
+          Remove-Item -Recurse -Force "$env:DESTINO/escritorio/python/Scripts" -ErrorAction SilentlyContinue
+
+      - name: Copiar la app
+        run: |
+          New-Item -ItemType Directory -Force "$env:DESTINO/escritorio/programa" | Out-Null
+          Copy-Item movil/main.py "$env:DESTINO/escritorio/programa/"
+          Copy-Item -Recurse movil/app "$env:DESTINO/escritorio/programa/app"
+          Copy-Item -Recurse movil/recursos "$env:DESTINO/escritorio/programa/recursos"
+          Copy-Item -Recurse karaoke "$env:DESTINO/escritorio/programa/karaoke"
+          Get-ChildItem -Recurse "$env:DESTINO" -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+      - name: Lanzador KaraokeEscritorio.exe
+        run: |
+          python -m pip install pyinstaller pillow
+          pyinstaller --noconfirm --onefile --windowed --name KaraokeEscritorio --icon movil/recursos/icono.png herramientas/lanzador_escritorio.py
+          Copy-Item dist/KaraokeEscritorio.exe "$env:DESTINO/"
+
+      - name: "Prueba: la interfaz arranca con el Python portátil"
+        continue-on-error: true   # el servidor puede no tener OpenGL
+        timeout-minutes: 3
+        run: |
+          $env:KARAOKE_HOME = (Resolve-Path ".").Path
+          $env:KARAOKE_PRUEBA_SEGUNDOS = "6"
+          $env:KIVY_GL_BACKEND = "angle_sdl2"
+          $p = Start-Process "$env:DESTINO/escritorio/python/python.exe" -ArgumentList "$env:DESTINO/escritorio/programa/main.py" -PassThru -RedirectStandardError err.txt
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); Get-Content err.txt -Tail 30; throw "No se cerró sola" }
+          Get-Content err.txt -Tail 15
+          if (-not (Test-Path "prueba_escritorio.txt")) { throw "La interfaz no llegó a mostrarse" }
+          Get-Content prueba_escritorio.txt
+
       - name: Comprimir
         run: |
-          Compress-Archive -Path dist-escritorio/KaraokeEscritorio/* -DestinationPath KaraokeEscritorio-Windows.zip
+          Compress-Archive -Path "$env:DESTINO/*" -DestinationPath KaraokeEscritorio-Windows.zip
           "{0:N0} MB" -f ((Get-Item KaraokeEscritorio-Windows.zip).Length / 1MB)
       - uses: actions/upload-artifact@v4
         with:
-          name: KaraokeEscritorio-Windows-${{ matrix.variante }}
+          name: KaraokeEscritorio-Windows
           path: KaraokeEscritorio-Windows.zip
           retention-days: 30
