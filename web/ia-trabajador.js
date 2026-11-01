@@ -62,39 +62,57 @@ async function cargar(modelo, avisar) {
   return tuberia;
 }
 
+// Une lo que oyó cada ventana. Cada zona compartida por dos ventanas se toma
+// de la que oyó más palabras ahí: a veces Whisper se salta líneas en una ventana
+// que la vecina sí escuchó.
+function fusionar(listas) {
+  const salida = [];
+  listas.forEach((v, k) => {
+    const ultima = k === listas.length - 1;
+    const inicioPropio = k === 0 ? -Infinity : v.desde + SOLAPE;
+    const finPropio = ultima ? Infinity : v.desde + VENTANA - SOLAPE;
+    salida.push(...v.palabras.filter((p) => p.inicio >= inicioPropio && p.inicio < finPropio));
+    if (!ultima) {
+      const a = finPropio, b = v.desde + VENTANA;
+      const mias = v.palabras.filter((p) => p.inicio >= a && p.inicio < b);
+      const suyas = listas[k + 1].palabras.filter((p) => p.inicio >= a && p.inicio < b);
+      salida.push(...(suyas.length > mias.length ? suyas : mias));
+    }
+  });
+  return salida.sort((x, y) => x.inicio - y.inicio);
+}
+
 self.onmessage = async ({ data }) => {
   const { id, modelo, idioma, audio } = data;
   const avisar = (datos) => self.postMessage({ id, tipo: "progreso", ...datos });
   try {
     const escuchar = await cargar(modelo, avisar);
     avisar({ fase: "escuchando", progreso: 0 });
-    const palabras = [], ventanas = [];
+    const listas = [], ventanas = [];
     const paso = (VENTANA - SOLAPE) * FRECUENCIA;
     for (let inicio = 0; inicio < audio.length; inicio += paso) {
       const fin = Math.min(audio.length, inicio + VENTANA * FRECUENCIA);
       const desde = inicio / FRECUENCIA;
-      const primera = inicio === 0, ultima = fin >= audio.length;
+      const ultima = fin >= audio.length;
       const salida = await escuchar(audio.subarray(inicio, fin), {
         return_timestamps: "word", task: "transcribe", ...(idioma ? { language: idioma } : {}),
         logits_processor: (() => { const l = new LogitsProcessorList(); l.push(new SinSimbolos(suprimidos)); return l; })(),
       });
-      // De cada ventana se toma lo que cae fuera de la mitad del solape con
-      // sus vecinas, para no repetir ni perder palabras en el corte.
       ventanas.push({ desde, texto: salida.text, palabras: (salida.chunks || []).slice(0, 6).map((c) => [c.text, ...(c.timestamp || [])]) });
-      const minimo = primera ? -Infinity : desde + SOLAPE / 2;
-      const maximo = ultima ? Infinity : desde + VENTANA - SOLAPE / 2;
+      const oidas = [];
       for (const trozo of salida.chunks || []) {
         const texto = (trozo.text || "").trim();
         const [a, b] = trozo.timestamp || [];
         // palabras amontonadas al final de la ventana: la IA no supo dónde van
         if (!texto || a == null || (a >= VENTANA - 0.1 && !ultima)) continue;
         const ini = desde + a, fin_ = desde + (b ?? a + 0.3);
-        if (ini >= minimo && ini < maximo) palabras.push({ texto, inicio: ini, fin: Math.max(fin_, ini + 0.05) });
+        oidas.push({ texto, inicio: ini, fin: Math.max(fin_, ini + 0.05) });
       }
+      listas.push({ desde, palabras: oidas });
       avisar({ fase: "escuchando", progreso: (fin / audio.length) * 100 });
       if (ultima) break;
     }
-    self.postMessage({ id, tipo: "listo", palabras, ventanas });
+    self.postMessage({ id, tipo: "listo", palabras: fusionar(listas), ventanas });
   } catch (error) {
     self.postMessage({ id, tipo: "error", mensaje: String(error?.message || error) });
   }
