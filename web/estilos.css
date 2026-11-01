@@ -426,6 +426,25 @@ a.siguiente-programa:hover { border-color: rgba(143,174,224,.28); }
 .niveles button { flex: 1; min-width: 0; min-height: 30px; padding: 0 4px; border: 0; border-radius: 9px; background: transparent; color: var(--texto-2); font-size: .74rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; transition: background .2s, color .2s; }
 .niveles button.activo { background: var(--superficie-alta); color: var(--texto); }
 .mini.idioma b { font-size: .8rem; line-height: 21px; color: var(--acento-texto); letter-spacing: .04em; }
+/* Tono y velocidad: el botón se tiñe si la pista no va como la original, y el
+   panel se abre dentro de la misma tarjeta (debajo de la voz del artista). */
+.mini.tono.cambiado { color: var(--acento-texto); }
+.mini.tono.activo { background: var(--acento-suave); }
+.isla-tono { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.07); animation: abrir-panel .32s var(--resorte); transform-origin: 85% 0; }
+@keyframes abrir-panel { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+.paso { display: grid; gap: 4px; min-width: 0; }
+.paso-nombre { padding-left: 4px; color: var(--texto-3); font-size: .7rem; font-weight: 600; letter-spacing: .02em; }
+.paso-control { display: flex; align-items: center; padding: 3px; border-radius: 12px; background: rgba(255,255,255,.05); }
+.paso-control button { flex: none; width: 34px; height: 30px; border: 0; border-radius: 9px; background: transparent; color: var(--texto); font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: background .2s, transform .1s; }
+.paso-control button:hover:not(:disabled) { background: rgba(255,255,255,.06); }
+.paso-control button:active:not(:disabled) { transform: scale(.9); }
+.paso-control button:disabled { color: var(--texto-3); opacity: .45; cursor: default; }
+.paso-control output { flex: 1; min-width: 0; text-align: center; color: var(--texto); font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.restablecer { height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--acento-texto); font-size: .76rem; font-weight: 600; cursor: pointer; }
+.restablecer:hover:not(:disabled) { background: rgba(255,255,255,.06); }
+.restablecer:disabled { color: var(--texto-3); opacity: .5; cursor: default; }
+.chip:has(> svg) { gap: 5px; }
+.chip > svg { width: 13px; height: 13px; fill: currentColor; }
 .etiqueta-campo { margin: 16px 0 6px; font-size: .78rem; font-weight: 600; color: var(--texto-2); }
 .niveles.idiomas { max-width: 320px; }
 .niveles.idiomas button { min-height: 36px; font-size: .85rem; }

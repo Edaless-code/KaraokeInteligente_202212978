@@ -530,6 +530,30 @@ Para probar la interfaz en la computadora: `python movil/main.py` (requiere `pip
 
 ---
 
+## Versión web *(agregada)*
+
+HTML, CSS y JavaScript con módulos ES, sin compilar ni dependencias que instalar (`web/`). Los datos quedan en el navegador: `localStorage` (prefijo `karaoke:`) para canciones propias, ediciones, programa, historial y ajustes, e IndexedDB para lo pesado (pistas subidas y grabaciones).
+
+| Archivo | Contenido |
+|---|---|
+| `app.js` | Rutas, vistas, escenario (manual, automático y pista), isla de controles, programa, historial, papelera, ajustes y respaldo |
+| `ia.js`, `ia-trabajador.js` | Whisper (transformers.js) en un *Worker*: ventanas de 30 s que se traslapan 10 s, tiempos por palabra, sin símbolos ni «[Música]» (un `LogitsProcessor` propio), y alineación con la letra |
+| `afinacion.js` | Puntuación: YIN, nota de referencia de la pista, `Calificador` y micrófono |
+| `grabacion.js` | `Grabadora`: `MediaRecorder` sobre la mezcla de la pista y el micrófono |
+| `tono-procesador.js` | `AudioWorklet` que cambia el tono sin cambiar la velocidad |
+| `sw.js`, `manifest.webmanifest` | App instalable y sin internet |
+| `servir.py`, `abrir.bat` | Servidor local con peticiones por rangos (para adelantar la pista) |
+
+**Cadena de audio de la pista.** `<audio>` → *(tono)* → separar canales → mezcla original + (−centro de 180 a 5000 Hz × (1 − voz)) → bocinas (y a la grabación). Restar el centro de la mezcla en la banda de la voz baja la voz principal sin tocar casi el resto.
+
+**Puntuación.** La nota de la voz original se calcula del centro de la mezcla filtrado entre 200 y 1000 Hz a 8 kHz, solo en el tramo central de cada palabra (se conocen sus tiempos); el micrófono se filtra entre 120 y 1200 Hz. Las notas se comparan sin importar la octava: hasta 0.75 semitonos vale 1, hasta 1.25 vale 0.5. Como la referencia sale de la mezcla, ni la voz original coincide siempre con ella: se calibra (`CALIBRACION = 0.65`) para que cantar como el artista valga cerca de 100. Puntaje = 70 % afinación + 30 % tiempo (cantar en al menos la mitad de cada palabra). Medido con micrófono simulado: voz original 87, la misma 3 semitonos arriba 38, silencio 0.
+
+**Tono y velocidad.** La velocidad usa `playbackRate` con `preservesPitch` (el navegador estira el audio sin cambiar el tono); la letra va con el segundo de la pista, así que no se desfasa. El tono lo cambia `tono-procesador.js`: dos cabezas leen un búfer circular con un retraso que cambia poco a poco (si el retraso baja, el sonido sale más agudo; la razón es 2^(semitonos/12)); al llegar al final de su recorrido de 50 ms cada cabeza salta al otro extremo, y las dos van desfasadas media ventana y se mezclan con seno y coseno para que el salto no se oiga y la potencia no cambie. Se midió con un seno de 220 Hz (+3 → 261.7 Hz, −5 → 165.2 Hz) y con *Sound of You* (−18.4 dB contra −18.3 dB del original). Al calificar, a la nota del micrófono se le resta el cambio de tono, porque la referencia sale de la pista original.
+
+**Sin internet.** El *service worker* guarda la app al instalarse (red primero, para recibir las versiones nuevas), las pistas en una caché aparte que responde a peticiones por rangos (206) para poder adelantar sin conexión, y las librerías y fuentes externas (caché primero).
+
+**Pruebas.** El trabajo `ia` de `.github/workflows/web.yml` abre la web en Chromium con el modelo real y comprueba que la IA sincronice *Ghost of you* (error medio ≤ 1.5 s) y escriba al menos el 60 % de la letra; el trabajo `zip` publica `KaraokeWeb.zip`.
+
 ## 12. Suposiciones y decisiones de diseño
 
 | # | Situación en la especificación | Decisión |

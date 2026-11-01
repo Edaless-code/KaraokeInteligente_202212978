@@ -551,11 +551,18 @@ function buscar(texto, limite = 5, prioridad = {}) {
 // Reproductor con control de la voz del artista: la voz principal suele estar
 // en el centro de la mezcla estéreo; se estima el centro (L+R)/2 solo en la
 // banda de la voz (180–5000 Hz) y se resta de ambos canales en la medida pedida.
+// El tono se cambia con un AudioWorklet (tono-procesador.js) entre la pista y
+// el quitavoz; la velocidad, con playbackRate del propio <audio> sin que cambie
+// el tono (preservesPitch). La letra sigue igual: va con el segundo de la pista.
+const TONO_LIMITE = 6, VELOCIDAD_MIN = 0.75, VELOCIDAD_MAX = 1.25;
+const sePuedeCambiarTono = () => typeof AudioWorkletNode !== "undefined" && window.isSecureContext !== false;
 class Reproductor {
   constructor(url) {
     this.audio = new Audio(url);
     this.audio.preload = "auto";
     this.voz = 1;
+    this.tono = 0;
+    this.velocidad = 1;
     this.ctx = null;
   }
   preparar() {
@@ -564,6 +571,7 @@ class Reproductor {
     if (!Ctx) return;
     const ctx = new Ctx(), fuente = ctx.createMediaElementSource(this.audio);
     const separar = ctx.createChannelSplitter(2), unir = ctx.createChannelMerger(2);
+    this.fuente = fuente; this.separar = separar;
     const mitadL = ctx.createGain(), mitadR = ctx.createGain(); mitadL.gain.value = mitadR.gain.value = 0.5;
     const pasaAltos = ctx.createBiquadFilter(); pasaAltos.type = "highpass"; pasaAltos.frequency.value = 180;
     const pasaBajos = ctx.createBiquadFilter(); pasaBajos.type = "lowpass"; pasaBajos.frequency.value = 5000;
@@ -578,7 +586,40 @@ class Reproductor {
     this.salida = unir;   // la mezcla que suena (para grabar la interpretación)
     this.ctx = ctx;
   }
-  async reproducir() { this.preparar(); if (this.ctx?.state === "suspended") await this.ctx.resume(); await this.audio.play(); }
+  async reproducir() {
+    this.preparar();
+    if (this.tono && !this.nodoTono) await this.ajustarTono(this.tono);
+    if (this.ctx?.state === "suspended") await this.ctx.resume();
+    await this.audio.play();
+  }
+  // Sube o baja la pista `semitonos` (sin cambiar la velocidad). Devuelve false
+  // si el navegador no lo permite. Antes de reproducir solo se guarda.
+  async ajustarTono(semitonos) {
+    this.tono = Math.max(-TONO_LIMITE, Math.min(TONO_LIMITE, Math.round(semitonos)));
+    if (!this.ctx) return sePuedeCambiarTono();
+    if (!this.nodoTono) {
+      if (!this.tono) return true;
+      if (!sePuedeCambiarTono() || !this.ctx.audioWorklet) return false;
+      try {
+        this.cargaTono ||= this.ctx.audioWorklet.addModule("tono-procesador.js");
+        await this.cargaTono;
+      } catch { this.cargaTono = null; return false; }
+      if (this.nodoTono || this.ctx.state === "closed") return !!this.nodoTono;
+      this.nodoTono = new AudioWorkletNode(this.ctx, "cambio-de-tono", {
+        outputChannelCount: [2], channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" });
+      this.fuente.disconnect();
+      this.fuente.connect(this.nodoTono).connect(this.separar);
+    }
+    this.nodoTono.parameters.get("semitonos").setValueAtTime(this.tono, this.ctx.currentTime);
+    return true;
+  }
+  ajustarVelocidad(v) {
+    this.velocidad = Math.max(VELOCIDAD_MIN, Math.min(VELOCIDAD_MAX, Math.round(v * 100) / 100));
+    const a = this.audio;
+    a.preservesPitch = a.mozPreservesPitch = a.webkitPreservesPitch = true;
+    a.playbackRate = this.velocidad;
+    a.defaultPlaybackRate = this.velocidad;
+  }
   pausar() { this.audio.pause(); }
   get pausado() { return this.audio.paused; }
   get segundo() { return this.audio.currentTime || 0; }
@@ -644,6 +685,7 @@ const ICON = {
   grabar: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></svg>`,
   detenerGrabacion: `<svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
+  tono: `<svg viewBox="0 0 24 24"><path d="M8 3v10.4A3.5 3.5 0 1 0 10 16.5V7h4V3H8Zm11 1-3 3.5h2V11h2V7.5h2L19 4Zm0 16 3-3.5h-2V13h-2v3.5h-2l3 3.5Z"/></svg>`,
 };
 
 function abrirEscenario(modo, cancion, linea = 0, { calificar = false } = {}) {
@@ -719,9 +761,29 @@ function pintarEscenario() {
         <button class="redondo" data-accion="pausa" id="b-principal" aria-label="Pausa" title="Pausa (espacio)">${ICON.pausa}</button>
         <button class="mini" data-accion="mas5" aria-label="Adelantar 5 segundos" title="+5 s (→)">${ICON.mas5}</button>
         <button class="mini" data-accion="sincronizar" aria-label="Afinar la sincronía" title="Afinar: marca con toques el inicio de cada línea">${ICON.afinar}</button>
+        <button class="mini tono" data-accion="tono" id="b-tono" aria-label="Tono y velocidad" aria-expanded="false" aria-controls="isla-tono" title="Tono y velocidad (T)">${ICON.tono}</button>
       </div>
       <div class="niveles" role="group" aria-label="Voz del artista" title="Voz del artista: al bajarla se escucha mejor a quien canta">
         <span class="niveles-icono" aria-hidden="true">${ICON.voz}</span>${NIVELES_VOZ.map((n) => `<button data-voz="${n}" class="${n === 1 ? "activo" : ""}" aria-label="Voz del artista al ${n * 100} %">${n * 100} %</button>`).join("")}
+      </div>
+      <div class="isla-tono" id="isla-tono" hidden>
+        <div class="paso">
+          <span class="paso-nombre">Tono</span>
+          <div class="paso-control" role="group" aria-label="Tono">
+            <button data-tono="-1" aria-label="Bajar medio tono" title="Bajar medio tono (−)">−</button>
+            <output id="v-tono" aria-live="polite">0</output>
+            <button data-tono="1" aria-label="Subir medio tono" title="Subir medio tono (+)">+</button>
+          </div>
+        </div>
+        <div class="paso">
+          <span class="paso-nombre">Velocidad</span>
+          <div class="paso-control" role="group" aria-label="Velocidad">
+            <button data-velocidad="-0.05" aria-label="Más lenta" title="Más lenta">−</button>
+            <output id="v-velocidad" aria-live="polite">100 %</output>
+            <button data-velocidad="0.05" aria-label="Más rápida" title="Más rápida">+</button>
+          </div>
+        </div>
+        <button class="restablecer" data-accion="restablecer-tono" id="b-restablecer-tono" title="Tono original y velocidad normal">Original</button>
       </div>`;
     const barra = $("#t-barra");
     barra.addEventListener("input", () => esc.reproductor && esc.reproductor.ir(barra.value / 100 * esc.reproductor.duracion));
@@ -750,6 +812,10 @@ async function iniciarPista(desde = 0, voz = +ajuste("voz-inicial", 1) || 1, ent
   if (!url) { pintarLetra([], 0, { actual: "Esta canción no tiene pista de audio", siguiente: "Agrégale un MP3 desde «Agregar canción»." }); return; }
   const r = esc.reproductor = new Reproductor(url);
   r.ajustarVoz(voz);
+  // el tono y la velocidad que se eligieron la última vez para esta canción
+  r.ajustarVelocidad(+c.velocidad || 1);
+  if (+c.tono && !(await r.ajustarTono(+c.tono))) r.tono = 0;
+  pintarTono();
   document.querySelectorAll("[data-voz]").forEach((x) => x.classList.toggle("activo", +x.dataset.voz === voz));
   estado("PREPARANDO", "intro");
   $("#esc-sub").textContent = "Cargando…";
@@ -778,6 +844,67 @@ async function iniciarPista(desde = 0, voz = +ajuste("voz-inicial", 1) || 1, ent
   // la letra se pasa sola a ir junto con la voz (y queda guardado).
   if (!c.tiempos) sincronizarEnEscenario(c, r);
 }
+// ---- tono y velocidad de la pista (se recuerdan por canción)
+const textoTono = (t) => (t > 0 ? `+${t}` : t < 0 ? `−${-t}` : "0");
+// `corto`: para el subtítulo del escenario ("Tono +2 · 90 %"), sin cortes de línea
+function resumenTono(c, corto = false) {
+  const partes = [], nb = "\u00A0";
+  if (+c?.tono) partes.push(`Tono${nb}${textoTono(+c.tono)}`);
+  if (+c?.velocidad && +c.velocidad !== 1) partes.push(`${corto ? "" : `Velocidad${nb}`}${Math.round(c.velocidad * 100)}${nb}%`);
+  return partes.join(" · ");
+}
+function pintarTono() {
+  const r = esc.reproductor;
+  if (!r || !$("#v-tono")) return;
+  const tono = r.tono, velocidad = r.velocidad;
+  $("#v-tono").textContent = textoTono(tono);
+  $("#v-velocidad").textContent = `${Math.round(velocidad * 100)} %`;
+  $('[data-tono="-1"]').disabled = tono <= -TONO_LIMITE;
+  $('[data-tono="1"]').disabled = tono >= TONO_LIMITE;
+  $('[data-velocidad="-0.05"]').disabled = velocidad <= VELOCIDAD_MIN + 0.001;
+  $('[data-velocidad="0.05"]').disabled = velocidad >= VELOCIDAD_MAX - 0.001;
+  const original = !tono && velocidad === 1;
+  $("#b-restablecer-tono").disabled = original;
+  $("#b-tono").classList.toggle("cambiado", !original);
+}
+function abrirPanelTono(abrir = $("#isla-tono")?.hidden) {
+  const panel = $("#isla-tono");
+  if (!panel) return;
+  panel.hidden = !abrir;
+  $("#b-tono").setAttribute("aria-expanded", String(!!abrir));
+  $("#b-tono").classList.toggle("activo", !!abrir);
+  if (abrir) mostrarIsla();
+}
+function guardarTono() {
+  const r = esc.reproductor, c = esc.cancion;
+  if (!r || !c) return;
+  const cambios = { tono: r.tono, velocidad: r.velocidad };
+  Object.assign(c, cambios);
+  const x = porId(c.id); if (x && x !== c) Object.assign(x, cambios);
+  guardarExtra(c.id, cambios);
+}
+async function cambiarTono(paso) {
+  const r = esc.reproductor;
+  if (!r) return;
+  if (!(await r.ajustarTono(r.tono + paso))) {
+    r.tono = 0;
+    avisar("Este navegador no permite cambiar el tono (prueba con Chrome, Edge, Firefox o Safari al día)");
+  }
+  pintarTono(); guardarTono();
+}
+function cambiarVelocidad(paso) {
+  const r = esc.reproductor;
+  if (!r) return;
+  r.ajustarVelocidad(r.velocidad + paso);
+  pintarTono(); guardarTono();
+}
+async function restablecerTono() {
+  const r = esc.reproductor;
+  if (!r) return;
+  await r.ajustarTono(0); r.ajustarVelocidad(1);
+  pintarTono(); guardarTono();
+  avisar("Tono original y velocidad normal");
+}
 async function sincronizarEnEscenario(c, r) {
   esc.estadoIA = "Preparando la IA para sincronizar la letra con la voz…";
   try {
@@ -801,7 +928,8 @@ function actualizarPista() {
   if (esc.calificador && esc.microfono && !r.pausado) escucharCantante(s);
   if (esc.grabadora?.grabando) $("#esc-grabando").textContent = `Grabando ${reloj(esc.grabadora.segundos)}`;
   if (!esc.tiempos && duracion) esc.tiempos = c.tiempos || tiemposAproximados(c.lineas, duracion);
-  $("#esc-sub").textContent = `${reloj(reloj_)} / ${reloj(duracion)}`;
+  const cambios = resumenTono(r, true);
+  $("#esc-sub").textContent = `${reloj(reloj_)} / ${reloj(duracion)}${cambios ? ` · ${cambios}` : ""}`;
   $("#t-actual").textContent = reloj(reloj_); $("#t-total").textContent = reloj(duracion);
   if (duracion && document.activeElement !== $("#t-barra")) $("#t-barra").value = (reloj_ / duracion) * 100;
   $("#esc-progreso").style.width = `${duracion ? (reloj_ / duracion) * 100 : 0}%`;
@@ -828,7 +956,7 @@ function actualizarPista() {
   if (actual < 0) {
     pintarLetra(c.lineas, 0, { previa: "", conPalabras: true });
     pintarPalabras(c, 0, s);
-    $("#esc-mensaje").textContent = esc.estadoIA || `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
+    $("#esc-mensaje").textContent = esc.estadoIA || `La letra empieza en ${Math.max(0, Math.ceil((esc.tiempos[0] - ADELANTO - s) / r.velocidad))} s`;
   } else {
     const linea = r.audio.ended ? c.lineas.length : actual;
     historial.avance(linea);
@@ -876,7 +1004,10 @@ function escucharCantante(segundo) {
   if (ahora - (esc.ultimoCuadro || 0) < 40) return;   // unas 25 lecturas por segundo
   esc.ultimoCuadro = ahora;
   const { voz, nota, nivel } = esc.microfono.leer();
-  esc.calificador.registrar(segundo, voz, nota);
+  // la nota de referencia sale de la pista original: si se cambió el tono, quien
+  // canta va esos semitonos arriba o abajo y se compara contra eso
+  const tono = esc.reproductor?.tono || 0;
+  esc.calificador.registrar(segundo, voz, nota === null || nota === undefined ? nota : nota - tono);
   const puntos = $("#esc-puntos");
   puntos.style.setProperty("--nivel", Math.min(1, nivel * 8).toFixed(2));
   if (ahora - (esc.ultimoPuntaje || 0) > 500 && esc.calificador.avance > 0) {
@@ -1072,6 +1203,8 @@ function accion(nombre) {
     case "mas5": r?.mover(5); return;
     case "inicio": r?.ir(0); return;
     case "sincronizar": if (r) empezarSincronizacion(); return;
+    case "tono": if (r) abrirPanelTono(); return;
+    case "restablecer-tono": restablecerTono(); return;
     case "idioma": {
       const nuevo = (esc.reconocedor?.lang || VOZ_NAVEGADOR[idiomaVoz()]).startsWith("es") ? "en" : "es";
       cambiarIdiomaVoz(nuevo);
@@ -1214,6 +1347,8 @@ document.addEventListener("click", async (e) => {
 $("#escenario").addEventListener("click", (e) => {
   const b = e.target.closest("[data-accion]");
   if (b) { accion(b.dataset.accion); return; }
+  const t = e.target.closest("[data-tono], [data-velocidad]");
+  if (t) { if (t.dataset.tono) cambiarTono(+t.dataset.tono); else cambiarVelocidad(+t.dataset.velocidad); return; }
   const v = e.target.closest("[data-voz]");
   if (v && esc.reproductor) {
     esc.reproductor.ajustarVoz(+v.dataset.voz);
@@ -1232,8 +1367,11 @@ document.addEventListener("keydown", (e) => {
   if (esc.sincronizando && (tecla === " " || tecla === "enter")) { e.preventDefault(); marcarLinea(); return; }
   const mapa = { escape: "cerrar", c: "continuar", enter: "continuar", arrowright: esc.modo === "pista" ? "mas5" : "continuar",
     arrowleft: esc.modo === "pista" ? "menos5" : "atras", a: "atras", i: "igual", r: "repetir", g: "pausa", s: "pausa", " ": "pausa",
-    ...(esc.modo === "automatico" ? { l: "idioma" } : {}) };
+    ...(esc.modo === "automatico" ? { l: "idioma" } : {}), ...(esc.modo === "pista" ? { t: "tono" } : {}) };
   if (mapa[tecla]) { e.preventDefault(); accion(mapa[tecla]); return; }
+  if (esc.modo === "pista" && esc.reproductor && ["-", "+", "="].includes(tecla)) {   // medio tono abajo / arriba
+    e.preventDefault(); cambiarTono(tecla === "-" ? -1 : 1); return;
+  }
   if (esc.modo === "pista" && (tecla === "[" || tecla === "]")) {   // afinar la letra a mano, de 0.1 en 0.1 s
     esc.desfase = Math.round((esc.desfase + (tecla === "]" ? 0.1 : -0.1)) * 10) / 10;
     guardado.escribir("desfase", esc.desfase);
@@ -1346,6 +1484,7 @@ const vistas = {
             <span class="chip">${c.lineas.length} líneas</span>
             <span class="chip">${c.idioma === "en" ? "Inglés" : "Español"}</span>
             ${c.mejorPuntaje != null ? `<span class="chip puntaje">${ICON.estrella} Mejor puntaje: ${c.mejorPuntaje}</span>` : ""}
+            ${resumenTono(c) ? `<span class="chip" title="Se aplica al reproducir la pista; se cambia desde la isla (botón de tono)">${ICON.tono} ${resumenTono(c)}</span>` : ""}
             <button class="chip" data-genero="${c.id}">Género: ${escapar(c.genero || "ninguno")}</button>
             <button class="chip" data-portada="${c.id}">${c.portada ? "Cambiar portada" : "Agregar portada"}</button>
           </div>
@@ -1569,6 +1708,7 @@ const vistas = {
     let microfonos = [];
     try { microfonos = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput"); } catch { /* sin permiso */ }
     const elegido = ajuste("microfono", "");
+    const conTono = canciones.filter((c) => resumenTono(c));
     contenido.innerHTML = `
       <p class="antetitulo">Karaoke inteligente</p>
       <h1>Ajustes</h1>
@@ -1585,6 +1725,10 @@ const vistas = {
           ${segmentos("voz-inicial", String(ajuste("voz-inicial", 1)), NIVELES_VOZ.map((n) => [String(n), `${n * 100} %`]))}</div>
         <div class="ajuste"><div><strong>Ocultar la isla de controles</strong><span class="nota">Cuando no se mueve el mouse.</span></div>
           ${segmentos("isla", ajuste("isla", "corta"), [["corta", "A los 3 s"], ["larga", "A los 6 s"], ["nunca", "Nunca"]])}</div>
+        <div class="ajuste"><div><strong>Tono y velocidad</strong><span class="nota">${conTono.length
+          ? `Cambiados en ${conTono.length === 1 ? "1 canción" : `${conTono.length} canciones`}: ${conTono.map((c) => escapar(c.nombre)).join(", ")}.`
+          : "Se cambian al cantar con el botón de la nota en la isla (o las teclas − y +) y se recuerdan para cada canción."}</span></div>
+          ${conTono.length ? `<button class="boton fantasma chico" id="aj-tono-original">${ICON.tono}<span>Volver todas al original</span></button>` : ""}</div>
       </section>
       <section class="tarjeta ajustes">
         <h2>Modo automático y puntuación</h2>
@@ -1628,6 +1772,11 @@ const vistas = {
     const mostrarDesfase = () => { const v = +desfase.value; valor.textContent = v === 0 ? "Junto con la voz" : `${Math.abs(v).toFixed(1)} s ${v > 0 ? "antes" : "después"}`; };
     mostrarDesfase();
     desfase.addEventListener("input", () => { guardado.escribir("desfase", +desfase.value); mostrarDesfase(); });
+    $("#aj-tono-original")?.addEventListener("click", () => {
+      for (const c of conTono) { guardarExtra(c.id, { tono: 0, velocidad: 1 }); Object.assign(c, { tono: 0, velocidad: 1 }); }
+      avisar("Todas las canciones vuelven a su tono y velocidad originales");
+      navegar();
+    });
     $("#aj-microfono").addEventListener("change", (e) => { guardado.escribir("ajuste-microfono", e.target.value); if (pruebaMic) probarMicrofono(); });
     $("#aj-probar").addEventListener("click", () => (pruebaMic ? detenerPruebaMic() : probarMicrofono()));
     $("#aj-respaldo").addEventListener("click", descargarRespaldo);

@@ -522,6 +522,24 @@ La carpeta `web/` (o el archivo **KaraokeWeb.zip** de la página de descargas) e
 
 En el **modo automático** se elige el idioma en que se va a cantar (español por omisión); al reconocer la canción, si tiene pista, la pista entra donde va el cantante con la voz del artista al 25 %. Con **[** y **]** se adelanta o atrasa la letra de 0.1 en 0.1 s.
 
+**Cantar y calificarme.** En cada canción con pista, el botón *Cantar y calificarme* escucha por el micrófono y compara, palabra por palabra, la nota que se canta con la de la voz original (sin importar la octava) y si se canta cuando toca. Arriba se ve el puntaje mientras se canta; al terminar aparece una tarjeta con el puntaje de 0 a 100, las estrellas, la afinación, el tiempo y si es récord. El mejor puntaje de cada canción queda en su ficha. La voz del artista baja sola al 25 % para que el micrófono escuche a quien canta (con audífonos, mejor).
+
+**Grabar la interpretación.** El botón redondo de la isla graba la voz del micrófono junto con la pista tal como suena. Al calificar se graba solo (se desactiva en *Ajustes*). Las grabaciones quedan en *Más → Grabaciones* (o *Sesión → Grabaciones* en la barra lateral) para escucharlas, descargarlas o eliminarlas; se guardan las últimas 30.
+
+**Tono y velocidad.** El botón de la nota musical de la isla abre dos controles:
+
+| Control | Qué hace | Teclas |
+|---|---|---|
+| **Tono** | Sube o baja la pista de medio en medio tono, de −6 a +6, sin cambiar la velocidad | **−** y **+** (o **=**) |
+| **Velocidad** | Del 75 % al 125 %, de 5 en 5, sin cambiar el tono | — |
+| **Original** | Vuelve al tono original y a la velocidad normal | — |
+
+La tecla **T** abre o cierra el panel. La letra sigue junto con la voz a cualquier velocidad, el puntaje toma en cuenta el tono elegido (si la pista va +2, se califica cantando 2 semitonos arriba) y lo que se elige **se recuerda para cada canción**: se ve en su ficha y en el subtítulo del escenario. En *Ajustes → Reproducción* se ven las canciones cambiadas y se pueden volver todas al original.
+
+**Ajustes.** *Más → Ajustes* reúne: desfase y tamaño de la letra (para verla de lejos o en un proyector), voz del artista al empezar, cuándo se oculta la isla, idioma del modo automático, si califica y graba sola, el micrófono (con una prueba que muestra el volumen y la nota que se detecta), el modelo de IA y el espacio que ocupa, y un **respaldo** en un archivo `.json` para pasar todo a otra computadora.
+
+**Instalar la app y usarla sin internet.** Con el botón *Instalar app* (Chrome o Edge en la computadora, Chrome en Android; en iPhone, Safari → Compartir → *Agregar a pantalla de inicio*) la web queda como una app más. Después de la primera visita funciona sin internet: la biblioteca, las canciones que ya sonaron una vez y adelantar o regresar la pista. La IA necesita internet solo la primera vez, para descargar el modelo.
+
 ## Novedades de la versión 1.2
 
 - **Letra junto con la voz:** cada línea cambia cuando se canta (antes iba medio segundo adelantada). En la web, además, cada palabra se pinta de azul pálido al cantarla; con **[** y **]** se afina de 0.1 en 0.1 s.
@@ -530,6 +548,7 @@ En el **modo automático** se elige el idioma en que se va a cantar (español po
 - **Letra con IA desde un MP3** en la versión de escritorio (*Agregar → Desde un MP3*) y en la web (*Solo el audio*).
 - **Versión web completa:** biblioteca con código, corregir, eliminar con papelera y «Deshacer», importar y exportar `.txt`, programa del cantante, historial con estadísticas, isla de controles compacta que se oculta sola y la IA que sincroniza las letras.
 - **Canciones de ejemplo con tiempos exactos** de cada línea y palabra (`ejemplos/tiempos.json`): suenan a tiempo desde la primera vez.
+- **En la web, después de la 1.2.0:** se instala como app y funciona sin internet; *Cantar y calificarme* (puntaje por afinación y tiempo); grabar la interpretación; página de *Ajustes* con prueba de micrófono y respaldo; y cambiar el tono y la velocidad de la pista (se recuerdan por canción).
 
 ## Novedades de la versión 1.1
 

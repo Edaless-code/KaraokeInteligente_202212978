@@ -80,6 +80,8 @@ python web/servir.py
 
 Se abre sola en http://localhost:8000. `servir.py` permite adelantar y regresar la canción, cosa que `python -m http.server` no hace. El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
 
+**Para cantar en serio:** *Cantar y calificarme* da un puntaje de 0 a 100 por afinación y tiempo (compara cada palabra con la voz original), la interpretación se puede **grabar** (voz con la pista) y la pista se puede **subir o bajar de tono** (±6 semitonos) y **cambiar de velocidad** (75–125 %) sin que la letra se desfase. Todo se ajusta en *Ajustes*, que también prueba el micrófono y hace respaldos.
+
 **Se instala como app** (botón *Instalar app*; en iPhone, Safari → Compartir → *Agregar a pantalla de inicio*) y **funciona sin internet** después de la primera visita: un *service worker* (`web/sw.js`) guarda la app y las pistas.
 
 **Publicarla en Vercel:** en [vercel.com/new](https://vercel.com/new) se importa este repositorio, se elige `web` como *Root Directory* (sin comando de compilación) y, en *Settings → Git → Production Branch*, la rama donde está la versión que se quiere publicar.
