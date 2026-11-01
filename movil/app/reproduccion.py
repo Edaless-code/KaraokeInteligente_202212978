@@ -71,14 +71,23 @@ class Reproduccion:
                 and self.segundo > 1.0)
 
     # ------------------------------------------------------------- control
-    def iniciar(self) -> None:
+    def iniciar(self, desde: float = 0.0) -> None:
+        """Empieza a sonar (``desde`` segundos: el modo automático entra a
+        media canción, donde va el cantante)."""
         self._iniciada = False
+        desde = max(0.0, desde)
         if self._nucleo is not None:
-            self._nucleo.iniciar()
+            self._nucleo.iniciar(desde)
         else:
             self._sonido.play()
-        self._inicio = time.monotonic()
+            if desde:
+                self._sonido.seek(desde)
+        self._inicio = time.monotonic() - desde
         self._iniciada = True
+
+    def ajustar_voz(self, nivel: float) -> None:
+        if self._nucleo is not None:
+            self._nucleo.ajustar_voz(nivel)
 
     def alternar_pausa(self) -> None:
         if self._nucleo is not None:

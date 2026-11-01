@@ -8,6 +8,21 @@ from .db import BaseDatos
 FORMATOS = (".mp3", ".wav", ".flac", ".ogg")
 
 
+def punto_de_entrada(tiempos: list[float], linea: int, fraccion: float = 0.0,
+                     latencia: float = 0.0) -> float:
+    """Segundo de la pista que corresponde a lo que el cantante va cantando:
+    el inicio de ``linea`` más la ``fraccion`` (0 a 1) de la línea ya cantada,
+    más la ``latencia`` del reconocimiento (mientras la IA reconocía, el
+    cantante siguió cantando)."""
+    if not tiempos:
+        return 0.0
+    linea = min(max(linea, 0), len(tiempos) - 1)
+    inicio = tiempos[linea]
+    fin = tiempos[linea + 1] if linea + 1 < len(tiempos) else inicio + 4.0
+    fraccion = min(max(fraccion, 0.0), 1.0)
+    return max(0.0, inicio + fraccion * (fin - inicio) + max(latencia, 0.0))
+
+
 def vincular_ejemplos(bd: BaseDatos, config: Config) -> int:
     """Asocia los audios de ``ejemplos/`` a su canción (por el nombre del
     archivo) para poder reproducirlos sin configurar nada. Devuelve cuántas

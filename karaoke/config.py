@@ -134,6 +134,11 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         "prediccion_tempo": "si",
         # Restringe el vocabulario de Vosk a las palabras de la letra.
         "vocabulario_restringido": "si",
+        # Al reconocer (con el micrófono) una canción que tiene pista, la pista
+        # empieza a sonar justo donde va el cantante, con la voz del artista
+        # bajada a este nivel (1, 0.75, 0.5 o 0.25).
+        "pista_al_reconocer": "si",
+        "voz_pista_al_reconocer": "0.25",
     },
     "pantalla": {
         # Líneas de contexto que se muestran antes y después de la actual.

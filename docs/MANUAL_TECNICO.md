@@ -246,6 +246,10 @@ micrófono / archivo ─► limpieza del sonido ─┬─► Vosk canal LIBRE (e
 - **Libre:** reconoce cualquier palabra del idioma. Sirve para identificar y para aprender canciones nuevas.
 - **Restringido:** cuando ya se sabe qué canción es, se crea un reconocedor con una **gramática que contiene solo las palabras de esa letra**, más `[unk]` para todo lo demás. La voz cantada se reconoce mucho peor que la hablada, y limitar el vocabulario a unas decenas de palabras hace que lo reconocido casi siempre sea de la letra. Las palabras se pasan **con tildes**, porque así las conoce el modelo, y para el inglés se agregan las contracciones ("dont" → "don't").
 
+### 5.2.1 Entrada de la pista al reconocer la canción
+
+Con el micrófono, en cuanto el controlador pasa a SIGUIENDO con una canción que tiene pista y tiempos, `ControladorAutomatico.posicion_cantada()` devuelve la línea y la fracción ya cantada. `karaoke.pistas.punto_de_entrada(tiempos, linea, fraccion, latencia)` lo convierte en el segundo de la pista: el inicio de la línea, más la fracción de su duración, más la latencia del reconocimiento. Entonces se detiene la escucha y se reproduce la pista desde ese segundo, con la voz del artista en `voz_pista_al_reconocer` (0.25 por defecto). Así lo hacen la consola (`ModoAutomatico.revisar_entrada_pista`), la interfaz Kivy (`Escenario._entrar_con_pista`) y la web (`entrarConPista`). Los tiempos de las canciones de ejemplo vienen en `ejemplos/tiempos.json`, que calcula `herramientas/tiempos_ejemplos.py` y que `vincular_ejemplos` carga en la tabla TIEMPOS.
+
 ### 5.3 Máquina de estados (`ControladorAutomatico`)
 
 ```

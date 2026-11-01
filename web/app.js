@@ -162,7 +162,7 @@ class Reproductor {
     const mitadL = ctx.createGain(), mitadR = ctx.createGain(); mitadL.gain.value = mitadR.gain.value = 0.5;
     const pasaAltos = ctx.createBiquadFilter(); pasaAltos.type = "highpass"; pasaAltos.frequency.value = 180;
     const pasaBajos = ctx.createBiquadFilter(); pasaBajos.type = "lowpass"; pasaBajos.frequency.value = 5000;
-    this.quitar = ctx.createGain(); this.quitar.gain.value = 0;
+    this.quitar = ctx.createGain(); this.quitar.gain.value = -(1 - (this.voz ?? 1));
     fuente.connect(separar);
     separar.connect(unir, 0, 0); separar.connect(unir, 1, 1);           // la mezcla original
     separar.connect(mitadL, 0); separar.connect(mitadR, 1);
@@ -217,7 +217,7 @@ const ICON = {
 
 function abrirEscenario(modo, cancion, linea = 0) {
   cerrarEscenario(true);
-  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null });
+  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "" });
   $("#escenario").hidden = false;
   document.body.style.overflow = "hidden";
   pintarEscenario();
@@ -280,10 +280,19 @@ function pintarEscenario() {
 }
 
 // ---- modo pista (reproducir con letra)
-async function iniciarPista() {
+// `desde` y `voz` los usa el modo automático: al reconocer la canción la pista
+// entra donde va el cantante, con la voz del artista bajada.
+async function iniciarPista(desde = 0, voz = 1) {
   const c = esc.cancion, url = await urlAudio(c);
   if (!url) { pintarLetra([], 0, { actual: "Esta canción no tiene pista de audio", siguiente: "Agrégale un MP3 desde «Agregar canción»." }); return; }
   esc.reproductor = new Reproductor(url);
+  esc.reproductor.ajustarVoz(voz);
+  document.querySelectorAll("[data-voz]").forEach((x) => x.classList.toggle("activo", +x.dataset.voz === voz));
+  if (desde > 0) {
+    const a = esc.reproductor.audio;
+    if (a.readyState >= 1) a.currentTime = desde;
+    else a.addEventListener("loadedmetadata", () => { a.currentTime = desde; }, { once: true });
+  }
   estado("PREPARANDO", "intro");
   $("#esc-sub").textContent = "Cargando…";
   try { await esc.reproductor.reproducir(); } catch { estado("EN PAUSA", "pausa"); avisar("Toca «Reproducir» para empezar"); }
@@ -317,7 +326,8 @@ function actualizarPista() {
     $("#esc-mensaje").textContent = `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
   } else {
     pintarLetra(c.lineas, r.audio.ended ? c.lineas.length : actual);
-    $("#esc-mensaje").textContent = c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo";
+    $("#esc-mensaje").textContent = esc.aviso && performance.now() < esc.avisoHasta ? esc.aviso
+      : (c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo");
   }
 }
 // "Afinar": la canción vuelve al inicio y cada toque marca el inicio de una línea.
@@ -390,6 +400,7 @@ function iniciarAutomatico() {
         esc.cancion = mejor.cancion; esc.linea = mejor.linea;
         rec.lang = mejor.cancion.idioma === "es" ? "es-ES" : "en-US";
         avisar(`Canción identificada: ${mejor.cancion.nombre}`);
+        if (entrarConPista(mejor.cancion, mejor.linea)) return;
         pintarEscenario();
       }
       return;
@@ -402,6 +413,28 @@ function iniciarAutomatico() {
   try { rec.start(); } catch { /* ya iniciado */ }
   $("#esc-mensaje").textContent = "Escuchando… empiece a cantar";
 }
+// Si la canción reconocida tiene pista y tiempos, la pista entra justo donde va
+// el cantante (a media línea, más lo que tardó el reconocimiento) con la voz del
+// artista al 25 %, y desde ahí la letra sigue a la pista.
+const VOZ_AL_RECONOCER = 0.25, LATENCIA_RECONOCIMIENTO = 0.8;
+function puntoDeEntrada(tiempos, linea, fraccion = 0.6, latencia = LATENCIA_RECONOCIMIENTO) {
+  if (!tiempos?.length) return 0;
+  linea = Math.min(Math.max(linea, 0), tiempos.length - 1);
+  const inicio = tiempos[linea], fin = linea + 1 < tiempos.length ? tiempos[linea + 1] : inicio + 4;
+  return Math.max(0, inicio + fraccion * (fin - inicio) + latencia);
+}
+function entrarConPista(cancion, linea) {
+  if (!cancion.audio || !cancion.tiempos || cancion.tiempos.length !== cancion.lineas.length) return false;
+  const rec = esc.reconocedor; esc.reconocedor = null;
+  try { rec?.stop(); } catch { /* ya detenido */ }
+  Object.assign(esc, { modo: "pista", tiempos: cancion.tiempos, pausado: false });
+  pintarEscenario();
+  iniciarPista(puntoDeEntrada(cancion.tiempos, linea), VOZ_AL_RECONOCER);
+  esc.aviso = "Canción reconocida: la pista entra donde vas cantando, con la voz del artista al 25 %";
+  esc.avisoHasta = performance.now() + 6000;
+  return true;
+}
+
 // Avanza cuando las últimas palabras oídas coinciden con el final de la línea
 // actual (70 %) o con el comienzo de las siguientes.
 function seguir(oido) {

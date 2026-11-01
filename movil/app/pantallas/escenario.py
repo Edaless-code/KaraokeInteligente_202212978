@@ -457,6 +457,7 @@ class Escenario(Pantalla):
         self._tiempos: list[float] = []
         self._cancion_pista = None
         self._afinando = ""
+        self._revisada = None  # canción para la que ya se decidió si entra la pista
 
     # ------------------------------------------------------------ entrada
     def al_entrar(self, modo: str = "manual", codigo: int | None = None, linea: int = 0, **_):
@@ -528,6 +529,7 @@ class Escenario(Pantalla):
     def _iniciar_automatico(self):
         if self.control is not None:
             return
+        self._revisada = None
         self.control = ControladorAutomatico(self.app.bd, self.app.buscador, self.app.config_karaoke,
                                              self.sesion, "Android")
         guion = self.app.carpeta / "ejemplos" / "guion_sound_of_you.txt"
@@ -568,7 +570,44 @@ class Escenario(Pantalla):
             self.voz.pedir_vocabulario(*self.control.vocabulario_pedido)  # computadora (Vosk)
         self.control.vocabulario_pedido = None
         self.hay_voz = voz
+        if self._entrar_con_pista():
+            return
         self.actualizar()
+
+    def _entrar_con_pista(self) -> bool:
+        """Al reconocer con el micrófono una canción que tiene pista y tiempos,
+        la pista entra justo donde va el cantante, con la voz del artista
+        bajada (``voz_pista_al_reconocer``), y la letra sigue a la pista."""
+        control = self.control
+        if control is None or control.cancion is None or self.fuente != "Micrófono":
+            return False
+        if control.cancion.codigo == self._revisada:
+            return False
+        self._revisada = control.cancion.codigo
+        config = self.app.config_karaoke
+        if not config.booleano("automatico", "pista_al_reconocer"):
+            return False
+        cancion = control.cancion
+        archivo = self.app.bd.obtener_pista(cancion.codigo)
+        tiempos = self.app.bd.obtener_tiempos(cancion.codigo)
+        if not archivo or not (self.app.carpeta / archivo).exists() or not tiempos \
+                or len(tiempos) != len(cancion.lineas):
+            return False
+        from karaoke.pistas import punto_de_entrada
+
+        linea, fraccion = control.posicion_cantada()
+        desde = punto_de_entrada(tiempos, linea, fraccion,
+                                 config.decimal("automatico", "segundos_latencia_reconocimiento"))
+        control.finalizar()  # la canción queda en la sesión
+        self._cerrar_automatico()
+        self.modo = "pista"
+        self.sesion = SesionKaraoke(self.app.bd, "pista")
+        self._iniciar_pista(cancion.codigo, desde, config.decimal("automatico", "voz_pista_al_reconocer"))
+        self._afinando = "Canción reconocida: la pista entra donde vas cantando"
+        Clock.schedule_once(lambda *_: setattr(self, "_afinando", ""), 6)
+        self._linea_mostrada = None
+        self.actualizar()
+        return True
 
     def _animar_pulso(self):
         animacion = Animation(pulso=1.5, d=0.6, t="in_out_sine") + Animation(pulso=1.0, d=0.6, t="in_out_sine")
@@ -586,7 +625,7 @@ class Escenario(Pantalla):
         self.control = None
 
     # ------------------------------------------------- con pista (r)
-    def _iniciar_pista(self, codigo: int):
+    def _iniciar_pista(self, codigo: int, desde: float = 0.0, voz: float = 1.0):
         from ..reproduccion import Reproduccion
 
         bd = self.app.bd
@@ -603,12 +642,13 @@ class Escenario(Pantalla):
             return
         try:
             self.reproduccion = Reproduccion(ruta)
+            self.reproduccion.ajustar_voz(voz)
         except Exception as ex:
             self._mensaje_pista(f"No se pudo reproducir: {ex}")
             return
         tiempos = bd.obtener_tiempos(codigo)
         if tiempos:
-            self._arrancar_pista(tiempos)
+            self._arrancar_pista(tiempos, desde)
             return
         try:
             from karaoke.audio.proceso import whisper_disponible
@@ -653,14 +693,15 @@ class Escenario(Pantalla):
 
         Clock.schedule_once(listo, 0)
 
-    def _arrancar_pista(self, tiempos: list[float]):
+    def _arrancar_pista(self, tiempos: list[float], desde: float = 0.0):
         self._tiempos = tiempos
         try:
-            self.reproduccion.iniciar()
+            self.reproduccion.iniciar(desde)
         except Exception as ex:
             self._mensaje_pista(f"No se pudo reproducir: {ex}")
             return
-        self.sesion.iniciar(self._cancion_pista, 0)
+        adelanto = self.app.config_karaoke.decimal("automatico", "segundos_letra_adelantada")
+        self.sesion.iniciar(self._cancion_pista, max(0, linea_en(tiempos, desde, adelanto)))
         self._reloj = Clock.schedule_interval(lambda dt: self.actualizar(), 1 / 30)
 
     def _mensaje_pista(self, texto: str, detalle: str = ""):

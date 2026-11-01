@@ -67,22 +67,41 @@ class ReproducirConLetra:
         if texto and not (texto.isdigit() and 1 <= int(texto) <= len(pistas)):
             return
         codigo, _, archivo = pistas[int(texto or 1) - 1]
+        self.reproducir(codigo, archivo)
+
+    def pista_de(self, codigo: int) -> str | None:
+        """Archivo de la pista de la canción (si tiene y existe)."""
+        for c, _, archivo in self.bd.listar_pistas():
+            if c == codigo and (self.config.carpeta / archivo).exists():
+                return archivo
+        return None
+
+    def reproducir(self, codigo: int, archivo: str, desde: float | None = None,
+                   voz: float = 1.0, mensaje: str = "") -> None:
+        """Reproduce la pista con su letra. ``desde`` permite entrar a media
+        canción (el modo automático la arranca donde va el cantante); si se da
+        y la canción no tiene tiempos, no se espera a la IA."""
         cancion = self.bd.obtener_cancion(codigo)
-        tiempos = self.bd.obtener_tiempos(codigo) or self._sincronizar(codigo, cancion.lineas, archivo)
+        tiempos = self.bd.obtener_tiempos(codigo)
+        if not tiempos:
+            if desde is not None:
+                return
+            tiempos = self._sincronizar(codigo, cancion.lineas, archivo)
         if not tiempos:
             return
         try:
             from ..audio.reproductor import Reproductor
 
             reproductor = Reproductor(self.config.carpeta / archivo)
-            reproductor.iniciar()
+            reproductor.ajustar_voz(voz)
+            reproductor.iniciar(desde or 0.0)
         except Exception as ex:
             consola.error(f"  No se pudo reproducir: {ex}")
             self.teclado.pausa()
             return
         consola.entrar_pantalla_completa()
         try:
-            self._bucle(reproductor, cancion, tiempos)
+            self._bucle(reproductor, cancion, tiempos, mensaje)
         finally:
             reproductor.detener()
             consola.salir_pantalla_completa()
@@ -108,11 +127,12 @@ class ReproducirConLetra:
         self.bd.guardar_tiempos(codigo, tiempos)
         return tiempos
 
-    def _bucle(self, reproductor, cancion, tiempos: list[float]) -> None:
+    def _bucle(self, reproductor, cancion, tiempos: list[float], aviso: str = "") -> None:
         adelanto = self.config.decimal("automatico", "segundos_letra_adelantada")
         previas = self.config.entero("pantalla", "lineas_previas")
         siguientes = self.config.entero("pantalla", "lineas_siguientes")
         ultima = None
+        inicio = time.monotonic()
         while True:
             tecla = self.teclado.tecla(0.05)
             if tecla in ("f", "esc", "q"):
@@ -143,6 +163,8 @@ class ReproducirConLetra:
             if reproductor.voz < 1 and not reproductor.voz_lista:
                 voz += " (preparando…)"
             mensaje = f"{_reloj(segundo)} / {_reloj(reproductor.duracion)}   ·   {voz}"
+            if aviso and time.monotonic() - inicio < 6:  # el aviso se ve los primeros segundos
+                mensaje = f"{aviso}   ·   {mensaje}"
             vista = VistaKaraoke(
                 nombre=cancion.nombre, codigo=cancion.codigo, lineas=cancion.lineas,
                 actual=max(actual, 0), modo="con pista", estado=estado, tono_estado=tono,

@@ -191,3 +191,50 @@ def test_censura_groserias_en_lo_escuchado(entorno):
     assert "bitch" not in control.escuchado and "b****" in control.escuchado
     assert censurar("Eres una PUTA mierda") == "Eres una P*** m*****"
     assert censurar("Bitchin is not filtered but bitch is") == "Bitchin is not filtered but b**** is"
+
+
+def test_posicion_cantada_y_entrada_de_la_pista(entorno):
+    from karaoke.pistas import punto_de_entrada
+
+    control, _, codigos = entorno
+    assert control.posicion_cantada() == (0, 0.0)
+    correr(control, "0:01 camino solo buscando tu sonrisa", 5)
+    linea, fraccion = control.posicion_cantada()
+    assert linea in (2, 3) and 0.0 <= fraccion <= 1.0
+    tiempos = [10.0, 14.0, 18.0, 22.0]
+    assert punto_de_entrada(tiempos, 2) == 18.0
+    assert punto_de_entrada(tiempos, 2, 0.5) == 20.0
+    assert punto_de_entrada(tiempos, 2, 0.5, latencia=1.0) == 21.0
+    assert punto_de_entrada(tiempos, 3, 1.0) == 26.0  # la última línea dura ~4 s
+    assert punto_de_entrada([], 0) == 0.0
+
+
+def test_al_reconocer_con_microfono_entra_la_pista(entorno, tmp_path):
+    from karaoke.ui.menus import Aplicacion
+    from karaoke.ui.modo_automatico import ModoAutomatico
+
+    control, bd, codigos = entorno
+    (tmp_path / "pista.mp3").write_bytes(b"")
+    bd.guardar_pista(codigos["lluvia"], "pista.mp3")
+    bd.guardar_tiempos(codigos["lluvia"], [10.0, 14.0, 18.0, 22.0])
+    modo = ModoAutomatico(Aplicacion(control.config, bd, teclado=object()))
+    modo._revisada = None
+
+    class FuenteMicrofono:  # basta el nombre de la clase
+        pass
+
+    class FuentePista:
+        pass
+
+    class Procesador:
+        fuente = FuentePista()
+
+    correr(control, "0:01 camino solo buscando tu sonrisa", 5)
+    assert not modo.revisar_entrada_pista(Procesador(), control)  # con pista ya suena la música
+    modo._revisada = None
+    Procesador.fuente = FuenteMicrofono()
+    assert modo.revisar_entrada_pista(Procesador(), control)
+    codigo, archivo, desde = modo.entrada_pista
+    assert (codigo, archivo) == (codigos["lluvia"], "pista.mp3")
+    assert 18.0 <= desde <= 27.0
+    assert not modo.revisar_entrada_pista(Procesador(), control)  # una sola vez por canción

@@ -245,6 +245,8 @@ Al terminar la última línea, la canción se registra como cantada, se marca en
    - si la canción **no está en la base de datos**, la **aprende**: guarda la letra que escucha en tablas temporales y sugiere un nombre. Después se revisa en **f → v**;
    - al terminar una canción, espera la siguiente.
 
+**Cantar con la música (micrófono).** Si la canción reconocida tiene pista y tiempos (las de ejemplo ya los traen), la **pista entra sola justo donde va el cantante**, con la **voz del artista al 25 %**. Desde ahí la letra sigue a la pista, con las teclas de "Reproducir con letra" (espacio, ← →, - +). Se desactiva o cambia el nivel en `karaoke.ini` (`pista_al_reconocer` y `voz_pista_al_reconocer`). Lo mismo pasa en la versión de escritorio y en la versión web.
+
 **La letra va adelantada a la voz.** Con una pista que suena por las bocinas, el programa la analiza **3 segundos antes** de que se escuche y muestra cada línea **medio segundo antes** de que se cante, para alcanzar a leerla y entrar a tiempo (como los subtítulos de un video). Con micrófono en vivo, la línea siguiente aparece un poco antes de que termine la actual. Los tiempos se ajustan en `karaoke.ini` (`segundos_analisis_adelantado` y `segundos_letra_adelantada`).
 
 La pantalla es la misma del modo manual. Mientras identifica la canción muestra **"Escuchando…"**, y si aprende una canción nueva muestra el borrador de su letra. Los **detalles técnicos** (lo último que escuchó la IA, el nivel del sonido y si hay voz, el tempo del cantante) se ocultan para que la pantalla no se mueva; se muestran u ocultan con la tecla **d**.

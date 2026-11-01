@@ -155,6 +155,16 @@ class ControladorAutomatico:
         self._pedir_vocabulario(cancion)
         self.avisar(f"Canción identificada: {cancion.nombre}{' · ' + motivo if motivo else ''}")
 
+    def posicion_cantada(self) -> tuple[int, float]:
+        """Línea que se está cantando y qué fracción de ella ya se cantó."""
+        if self.seguidor is None:
+            return 0, 0.0
+        s = self.seguidor
+        linea = s.mostrada
+        palabras = max(1, s.palabras_de(linea))
+        hechas = s.pos - s._inicio(linea)
+        return linea, min(max(hechas / palabras, 0.0), 1.0)
+
     def _terminar_cancion(self, completada: bool) -> None:
         if self.cancion is None:
             return

@@ -175,6 +175,7 @@ class ModoAutomatico:
             sesion.finalizar()
             self.teclado.pausa()
             return
+        self.entrada_pista = None
         consola.entrar_pantalla_completa()
         try:
             self.bucle(procesador, control)
@@ -184,7 +185,37 @@ class ModoAutomatico:
             control.finalizar()
         if procesador.error:
             consola.error(f"Error de audio: {procesador.error}")
+        if self.entrada_pista is not None:
+            self.reproductor.reproducir(*self.entrada_pista[:2], desde=self.entrada_pista[2],
+                                        voz=self.config.decimal("automatico", "voz_pista_al_reconocer"),
+                                        mensaje="Canción reconocida: la pista entra donde vas cantando")
         self.resumen(sesion)
+
+    def revisar_entrada_pista(self, procesador: ProcesadorAudio, control: ControladorAutomatico) -> bool:
+        """Con el micrófono, al reconocer una canción que tiene pista y tiempos,
+        prepara la entrada de la pista justo donde va el cantante (con la voz
+        del artista bajada). Devuelve True si hay que pasar a la pista."""
+        if control.cancion is None or control.cancion.codigo == self._revisada:
+            return False
+        self._revisada = control.cancion.codigo
+        if not self.config.booleano("automatico", "pista_al_reconocer"):
+            return False
+        if type(procesador.fuente).__name__ != "FuenteMicrofono":
+            return False  # con una pista o un archivo de audio ya suena la música
+        from .reproducir import ReproducirConLetra
+
+        self.reproductor = ReproducirConLetra(self.app)
+        archivo = self.reproductor.pista_de(control.cancion.codigo)
+        tiempos = self.bd.obtener_tiempos(control.cancion.codigo)
+        if not archivo or not tiempos or len(tiempos) != len(control.cancion.lineas):
+            return False
+        from ..pistas import punto_de_entrada
+
+        linea, fraccion = control.posicion_cantada()
+        latencia = self.config.decimal("automatico", "segundos_latencia_reconocimiento")
+        self.entrada_pista = (control.cancion.codigo, archivo,
+                              punto_de_entrada(tiempos, linea, fraccion, latencia))
+        return True
 
     def bucle(self, procesador: ProcesadorAudio, control: ControladorAutomatico) -> None:
         nivel, voz = -120.0, False
@@ -193,6 +224,7 @@ class ModoAutomatico:
         fin_audio = None
         self._ultima_pantalla = None
         self.ver_detalles = False
+        self._revisada = None
         # Con una pista que suena por las bocinas el análisis va adelantado y la
         # pantalla muestra lo que corresponde a lo que se escucha (sincronía).
         retardo = getattr(procesador.fuente, "retardo", 0.0)
@@ -214,6 +246,8 @@ class ModoAutomatico:
                 linea_tiempo.guardar(segundo, control.pantalla())
                 if resultado.terminado and fin_audio is None:
                     fin_audio = time.monotonic()
+            if self.revisar_entrada_pista(procesador, control):
+                break
             if control.vocabulario_pedido is not None:
                 procesador.pedir_vocabulario(*control.vocabulario_pedido)
                 control.vocabulario_pedido = None

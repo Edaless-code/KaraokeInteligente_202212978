@@ -65,10 +65,20 @@ cd KaraokeInteligente_202212978
 pip install -r requirements.txt
 pip install faster-whisper     # opcional: mejora el modo automático
 python main.py                 # versión de consola (Windows/Linux/macOS)
-python -m pytest               # 147 pruebas automáticas
+python -m pytest               # 182 pruebas automáticas
 ```
 
 App móvil en la computadora: `pip install kivy plyer` y luego `python movil/main.py`.
+
+## 🌐 Versión web
+
+La carpeta [`web/`](web) es una página sin dependencias (HTML, CSS y JavaScript) con la biblioteca, los modos manual y automático, la reproducción con letra y la voz del artista al 100/75/50/25 %. Para probarla:
+
+```bash
+python -m http.server 8000 -d web
+```
+
+Luego se abre http://localhost:8000. Para publicarla en Vercel se importa el repositorio y se elige `web` como *Root Directory* (sin comando de compilación). El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
 
 ## 📚 Documentación
 
