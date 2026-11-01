@@ -295,7 +295,11 @@ function obtenerTrabajador() {
     const p = pendientes.get(data.id);
     if (!p) return;
     if (data.tipo === "progreso") p.alProgreso?.(data);
-    else { pendientes.delete(data.id); data.tipo === "listo" ? p.ok(data.palabras) : p.mal(new Error(data.mensaje)); }
+    else {
+      pendientes.delete(data.id);
+      if (data.tipo === "listo") { globalThis.__iaDepuracion = { ventanas: data.ventanas, palabras: data.palabras }; p.ok(data.palabras); }
+      else p.mal(new Error(data.mensaje));
+    }
   };
   trabajador.onerror = (e) => {
     for (const p of pendientes.values()) p.mal(new Error(e.message || "no se pudo descargar la IA; revisa la conexión a internet"));

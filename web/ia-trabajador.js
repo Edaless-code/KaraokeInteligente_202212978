@@ -37,7 +37,7 @@ self.onmessage = async ({ data }) => {
   try {
     const escuchar = await cargar(modelo, avisar);
     avisar({ fase: "escuchando", progreso: 0 });
-    const palabras = [];
+    const palabras = [], ventanas = [];
     const paso = (VENTANA - SOLAPE) * FRECUENCIA;
     for (let inicio = 0; inicio < audio.length; inicio += paso) {
       const fin = Math.min(audio.length, inicio + VENTANA * FRECUENCIA);
@@ -48,6 +48,7 @@ self.onmessage = async ({ data }) => {
       });
       // De cada ventana se toma lo que cae fuera de la mitad del solape con
       // sus vecinas, para no repetir ni perder palabras en el corte.
+      ventanas.push({ desde, texto: salida.text, palabras: (salida.chunks || []).slice(0, 6).map((c) => [c.text, ...(c.timestamp || [])]) });
       const minimo = primera ? -Infinity : desde + SOLAPE / 2;
       const maximo = ultima ? Infinity : desde + VENTANA - SOLAPE / 2;
       for (const trozo of salida.chunks || []) {
@@ -60,7 +61,7 @@ self.onmessage = async ({ data }) => {
       avisar({ fase: "escuchando", progreso: (fin / audio.length) * 100 });
       if (ultima) break;
     }
-    self.postMessage({ id, tipo: "listo", palabras });
+    self.postMessage({ id, tipo: "listo", palabras, ventanas });
   } catch (error) {
     self.postMessage({ id, tipo: "error", mensaje: String(error?.message || error) });
   }

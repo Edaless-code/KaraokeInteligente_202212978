@@ -49,6 +49,8 @@ const avance = setInterval(async () => console.log("  ", await pagina.textConten
 try {
   await pagina.waitForSelector("#form-revision", { timeout: 25 * 60 * 1000 });
   const escrita = await pagina.inputValue("#form-revision textarea");
+  const dep = await pagina.evaluate(() => globalThis.__iaDepuracion);
+  for (const v of dep?.ventanas || []) console.log(`  ventana ${v.desde}s: ${JSON.stringify(v.texto).slice(0, 160)} · ${JSON.stringify(v.palabras)}`);
   const porcentaje = acierto(letraDe("Sound of You").join(" "), escrita) * 100;
   console.log(`\n1. Letra escrita por la IA (${MODELO}) en ${Math.round((Date.now() - inicio) / 1000)} s: ${porcentaje.toFixed(1)} % de las palabras\n`);
   console.log(escrita);
@@ -71,6 +73,8 @@ inicio = Date.now();
 await pagina.click("#form-cancion [type=submit]");
 try {
   await pagina.waitForFunction(() => document.querySelector(".estado-sincronia")?.textContent.includes("sincronizada"), null, { timeout: 25 * 60 * 1000, polling: 2000 });
+  const dep2 = await pagina.evaluate(() => globalThis.__iaDepuracion);
+  for (const v of dep2?.ventanas || []) console.log(`  ventana ${v.desde}s: ${JSON.stringify(v.texto).slice(0, 160)} · ${JSON.stringify(v.palabras)}`);
   const extras = await pagina.evaluate(() => JSON.parse(localStorage.getItem("karaoke:extras")));
   const propia = Object.entries(extras).find(([, x]) => x.sincronizada === "ia" && x.tiempos?.length === 19);
   const esperados = JSON.parse(readFileSync(RAIZ + "ejemplos/tiempos.json", "utf8"))["Ghost of you"].tiempos;
