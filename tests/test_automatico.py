@@ -234,10 +234,33 @@ def test_al_reconocer_con_microfono_entra_la_pista(entorno, tmp_path):
     modo._revisada = None
     Procesador.fuente = FuenteMicrofono()
     assert modo.revisar_entrada_pista(Procesador(), control)
-    codigo, archivo, desde = modo.entrada_pista
+    codigo, archivo, desde, entrada = modo.entrada_pista
     assert (codigo, archivo) == (codigos["lluvia"], "pista.mp3")
-    assert 18.0 <= desde <= 27.0
+    assert 18.0 <= desde <= 27.0 and entrada[0] in (2, 3)
     assert not modo.revisar_entrada_pista(Procesador(), control)  # una sola vez por canción
+
+
+def test_al_reconocer_entra_la_pista_aunque_no_tenga_tiempos(entorno, tmp_path):
+    from karaoke.ui.menus import Aplicacion
+    from karaoke.ui.modo_automatico import ModoAutomatico
+
+    control, bd, codigos = entorno
+    (tmp_path / "pista.mp3").write_bytes(b"")
+    bd.guardar_pista(codigos["lluvia"], "pista.mp3")          # sin tiempos todavía
+    modo = ModoAutomatico(Aplicacion(control.config, bd, teclado=object()))
+    modo._revisada = None
+
+    class FuenteMicrofono:
+        pass
+
+    class Procesador:
+        fuente = FuenteMicrofono()
+
+    correr(control, "0:01 camino solo buscando tu sonrisa", 5)
+    assert modo.revisar_entrada_pista(Procesador(), control)
+    codigo, archivo, desde, entrada = modo.entrada_pista
+    assert codigo == codigos["lluvia"] and desde is None       # se calcula con los aproximados al sonar
+    assert entrada[0] in (2, 3) and 0.0 <= entrada[1] <= 1.0
 
 
 def test_escucha_en_espanol_aunque_las_canciones_sean_en_ingles(tmp_path):

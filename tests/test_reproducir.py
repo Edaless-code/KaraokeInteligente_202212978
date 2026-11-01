@@ -111,3 +111,33 @@ def test_niveles_de_voz_y_cambio_suave():
     centro = np.ones(fs, np.float32)
     salida = mezclar(estereo, centro, np.linspace(1.0, 0.5, fs, dtype=np.float32))
     assert abs(salida[0, 0] - 1.0) < 1e-6 and abs(salida[-1, 0] - 0.5) < 1e-6
+
+
+def test_los_tiempos_de_la_ia_se_cambian_sin_detener_la_cancion(tmp_path, monkeypatch):
+    from karaoke.config import cargar_config
+    from karaoke.db import BaseDatos
+    from karaoke.ui import consola
+    from karaoke.ui.menus import Aplicacion
+    from karaoke.ui.reproducir import ReproducirConLetra
+
+    monkeypatch.setattr(consola, "redibujar", lambda renglones: None)
+    config = cargar_config(tmp_path)
+    bd = BaseDatos(config.ruta_bd)
+    codigo = bd.agregar_cancion("Lluvia", ["la lluvia cae", "sobre la ciudad", "dormida"])
+
+    class Reproductor:
+        segundo, duracion, voz, voz_lista, pausado, terminada = 0.0, 30.0, 1.0, True, False, False
+
+    class Teclas:
+        vueltas = 0
+
+        def tecla(self, espera):
+            self.vueltas += 1
+            return "f" if self.vueltas > 3 else None
+
+    app = Aplicacion(config, bd, Teclas())
+    estado = {"tiempos": [0.0, 10.0, 20.0], "nuevos": [2.0, 6.5, 12.0], "afinando": False}
+    ReproducirConLetra(app)._bucle(Reproductor(), bd.obtener_cancion(codigo), estado)
+    assert estado["tiempos"] == [2.0, 6.5, 12.0] and estado["nuevos"] is None
+    assert bd.obtener_tiempos(codigo) == [2.0, 6.5, 12.0]          # quedó guardado
+    bd.cerrar()

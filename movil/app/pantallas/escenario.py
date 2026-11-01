@@ -575,9 +575,11 @@ class Escenario(Pantalla):
         self.actualizar()
 
     def _entrar_con_pista(self) -> bool:
-        """Al reconocer con el micrófono una canción que tiene pista y tiempos,
-        la pista entra justo donde va el cantante, con la voz del artista
-        bajada (``voz_pista_al_reconocer``), y la letra sigue a la pista."""
+        """Al reconocer con el micrófono una canción que tiene pista, la pista
+        entra justo donde va el cantante, con la voz del artista bajada
+        (``voz_pista_al_reconocer``), y la letra sigue a la pista. Si aún no
+        tiene tiempos exactos entra con los aproximados y la IA los afina
+        mientras suena."""
         control = self.control
         if control is None or control.cancion is None or self.fuente != "Micrófono":
             return False
@@ -589,20 +591,15 @@ class Escenario(Pantalla):
             return False
         cancion = control.cancion
         archivo = self.app.bd.obtener_pista(cancion.codigo)
-        tiempos = self.app.bd.obtener_tiempos(cancion.codigo)
-        if not archivo or not (self.app.carpeta / archivo).exists() or not tiempos \
-                or len(tiempos) != len(cancion.lineas):
+        if not archivo or not (self.app.carpeta / archivo).exists():
             return False
-        from karaoke.pistas import punto_de_entrada
-
         linea, fraccion = control.posicion_cantada()
-        desde = punto_de_entrada(tiempos, linea, fraccion,
-                                 config.decimal("automatico", "segundos_latencia_reconocimiento"))
+        entrada = (linea, fraccion, config.decimal("automatico", "segundos_latencia_reconocimiento"))
         control.finalizar()  # la canción queda en la sesión
         self._cerrar_automatico()
         self.modo = "pista"
         self.sesion = SesionKaraoke(self.app.bd, "pista")
-        self._iniciar_pista(cancion.codigo, desde, config.decimal("automatico", "voz_pista_al_reconocer"))
+        self._iniciar_pista(cancion.codigo, voz=config.decimal("automatico", "voz_pista_al_reconocer"), entrada=entrada)
         self._afinando = "Canción reconocida: la pista entra donde vas cantando"
         Clock.schedule_once(lambda *_: setattr(self, "_afinando", ""), 6)
         self._linea_mostrada = None
@@ -625,7 +622,16 @@ class Escenario(Pantalla):
         self.control = None
 
     # ------------------------------------------------- con pista (r)
-    def _iniciar_pista(self, codigo: int, desde: float = 0.0, voz: float = 1.0):
+    def _iniciar_pista(self, codigo: int, desde: float = 0.0, voz: float = 1.0,
+                       entrada: tuple[int, float, float] | None = None):
+        """``entrada`` (línea, fracción cantada, latencia): el modo automático
+        entra a media canción; el segundo se calcula con los tiempos que haya
+        (exactos o aproximados)."""
+        from karaoke.pistas import punto_de_entrada
+
+        def desde_para(tiempos):
+            return punto_de_entrada(tiempos, *entrada) if entrada else desde
+
         from ..reproduccion import Reproduccion
 
         bd = self.app.bd
@@ -647,8 +653,8 @@ class Escenario(Pantalla):
             self._mensaje_pista(f"No se pudo reproducir: {ex}")
             return
         tiempos = bd.obtener_tiempos(codigo)
-        if tiempos:
-            self._arrancar_pista(tiempos, desde)
+        if tiempos and len(tiempos) == len(cancion.lineas):
+            self._arrancar_pista(tiempos, desde_para(tiempos))
             return
         try:
             from karaoke.audio.proceso import whisper_disponible
@@ -659,13 +665,15 @@ class Escenario(Pantalla):
         if self.reproduccion.voz_disponible and con_whisper:
             # Computadora: la canción empieza YA con tiempos aproximados y la IA
             # afina la sincronía en segundo plano (solo la primera vez).
-            self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
+            aproximados = tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion)
+            self._arrancar_pista(aproximados, desde_para(aproximados))
             self._afinando = "Afinando la sincronía con IA… (solo la primera vez)"
             threading.Thread(target=self._sincronizar, args=(codigo, cancion.lineas, ruta), daemon=True).start()
         else:
             # Teléfono: tiempos aproximados (se afinan al abrirla en la computadora).
             # Teléfono, o computadora sin Whisper: tiempos aproximados.
-            self._arrancar_pista(tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion))
+            aproximados = tiempos_de_lineas(cancion.lineas, [], self.reproduccion.duracion)
+            self._arrancar_pista(aproximados, desde_para(aproximados))
             self._afinando = ("Tiempos aproximados · para la sincronía exacta: pip install faster-whisper"
                             if self.reproduccion.voz_disponible else "Letra con tiempos aproximados")
 

@@ -187,13 +187,14 @@ class ModoAutomatico:
         if procesador.error:
             consola.error(f"Error de audio: {procesador.error}")
         if self.entrada_pista is not None:
-            self.reproductor.reproducir(*self.entrada_pista[:2], desde=self.entrada_pista[2],
+            codigo, archivo, desde, entrada = self.entrada_pista
+            self.reproductor.reproducir(codigo, archivo, desde=desde, entrada=None if desde is not None else entrada,
                                         voz=self.config.decimal("automatico", "voz_pista_al_reconocer"),
                                         mensaje="Canción reconocida: la pista entra donde vas cantando")
         self.resumen(sesion)
 
     def revisar_entrada_pista(self, procesador: ProcesadorAudio, control: ControladorAutomatico) -> bool:
-        """Con el micrófono, al reconocer una canción que tiene pista y tiempos,
+        """Con el micrófono, al reconocer una canción que tiene pista (con o sin tiempos),
         prepara la entrada de la pista justo donde va el cantante (con la voz
         del artista bajada). Devuelve True si hay que pasar a la pista."""
         if control.cancion is None or control.cancion.codigo == self._revisada:
@@ -207,15 +208,19 @@ class ModoAutomatico:
 
         self.reproductor = ReproducirConLetra(self.app)
         archivo = self.reproductor.pista_de(control.cancion.codigo)
-        tiempos = self.bd.obtener_tiempos(control.cancion.codigo)
-        if not archivo or not tiempos or len(tiempos) != len(control.cancion.lineas):
+        if not archivo:
             return False
         from ..pistas import punto_de_entrada
 
+        tiempos = self.bd.obtener_tiempos(control.cancion.codigo)
         linea, fraccion = control.posicion_cantada()
         latencia = self.config.decimal("automatico", "segundos_latencia_reconocimiento")
-        self.entrada_pista = (control.cancion.codigo, archivo,
-                              punto_de_entrada(tiempos, linea, fraccion, latencia))
+        entrada = (linea, fraccion, latencia)
+        # Sin tiempos exactos también entra: con tiempos aproximados que la IA
+        # afina mientras suena (el punto de entrada se calcula con ellos).
+        desde = (punto_de_entrada(tiempos, *entrada)
+                 if tiempos and len(tiempos) == len(control.cancion.lineas) else None)
+        self.entrada_pista = (control.cancion.codigo, archivo, desde, entrada)
         return True
 
     def bucle(self, procesador: ProcesadorAudio, control: ControladorAutomatico) -> None:

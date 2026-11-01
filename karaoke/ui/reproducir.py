@@ -77,22 +77,41 @@ class ReproducirConLetra:
         return None
 
     def reproducir(self, codigo: int, archivo: str, desde: float | None = None,
-                   voz: float = 1.0, mensaje: str = "") -> None:
-        """Reproduce la pista con su letra. ``desde`` permite entrar a media
-        canción (el modo automático la arranca donde va el cantante); si se da
-        y la canción no tiene tiempos, no se espera a la IA."""
+                   voz: float = 1.0, mensaje: str = "",
+                   entrada: tuple[int, float, float] | None = None) -> None:
+        """Reproduce la pista con su letra. ``desde`` (o ``entrada``: línea,
+        fracción cantada y latencia) permite entrar a media canción: el modo
+        automático la arranca donde va el cantante. En ese caso, si la canción
+        aún no tiene tiempos, no se espera a la IA: empieza con tiempos
+        aproximados y la IA los afina mientras suena."""
         cancion = self.bd.obtener_cancion(codigo)
         tiempos = self.bd.obtener_tiempos(codigo)
-        if not tiempos:
-            if desde is not None:
-                return
+        if tiempos and len(tiempos) != len(cancion.lineas):
+            tiempos = None
+        en_vivo = desde is not None or entrada is not None
+        if not tiempos and not en_vivo:
             tiempos = self._sincronizar(codigo, cancion.lineas, archivo)
-        if not tiempos:
-            return
+            if not tiempos:
+                return
         try:
             from ..audio.reproductor import Reproductor
 
             reproductor = Reproductor(self.config.carpeta / archivo)
+        except Exception as ex:
+            consola.error(f"  No se pudo reproducir: {ex}")
+            self.teclado.pausa()
+            return
+        estado = {"tiempos": tiempos, "nuevos": None, "afinando": False}
+        if not tiempos:
+            from ..alineacion import tiempos_de_lineas
+
+            estado["tiempos"] = tiempos_de_lineas(cancion.lineas, [], reproductor.duracion)
+            self._sincronizar_en_segundo_plano(cancion.lineas, archivo, estado)
+        if entrada is not None:
+            from ..pistas import punto_de_entrada
+
+            desde = punto_de_entrada(estado["tiempos"], *entrada)
+        try:
             reproductor.ajustar_voz(voz)
             reproductor.iniciar(desde or 0.0)
         except Exception as ex:
@@ -101,10 +120,35 @@ class ReproducirConLetra:
             return
         consola.entrar_pantalla_completa()
         try:
-            self._bucle(reproductor, cancion, tiempos, mensaje)
+            self._bucle(reproductor, cancion, estado, mensaje)
         finally:
             reproductor.detener()
             consola.salir_pantalla_completa()
+
+    def _sincronizar_en_segundo_plano(self, lineas: list[str], archivo: str, estado: dict) -> None:
+        """Whisper escucha la pista en otro hilo; los tiempos nuevos se guardan
+        desde el bucle principal (la base de datos no se comparte entre hilos)."""
+        try:
+            from ..audio.proceso import whisper_disponible
+
+            if not whisper_disponible():
+                return
+        except Exception:
+            return
+        import threading
+
+        def trabajar() -> None:
+            estado["afinando"] = True
+            try:
+                from ..audio.desde_audio import sincronizar
+
+                estado["nuevos"] = sincronizar(self.config.carpeta / archivo, self.config, lineas)
+            except Exception:
+                pass
+            finally:
+                estado["afinando"] = False
+
+        threading.Thread(target=trabajar, daemon=True).start()
 
     def _sincronizar(self, codigo: int, lineas: list[str], archivo: str) -> list[float] | None:
         print()
@@ -127,7 +171,9 @@ class ReproducirConLetra:
         self.bd.guardar_tiempos(codigo, tiempos)
         return tiempos
 
-    def _bucle(self, reproductor, cancion, tiempos: list[float], aviso: str = "") -> None:
+    def _bucle(self, reproductor, cancion, sincronia, aviso: str = "") -> None:
+        if not isinstance(sincronia, dict):
+            sincronia = {"tiempos": sincronia, "nuevos": None, "afinando": False}
         adelanto = self.config.decimal("automatico", "segundos_letra_adelantada")
         previas = self.config.entero("pantalla", "lineas_previas")
         siguientes = self.config.entero("pantalla", "lineas_siguientes")
@@ -150,6 +196,12 @@ class ReproducirConLetra:
             if reproductor.terminada:
                 time.sleep(0.5)
                 return
+            if sincronia.get("nuevos"):
+                # la IA terminó de sincronizar: la letra pasa a ir junto con la voz
+                self.bd.guardar_tiempos(cancion.codigo, sincronia["nuevos"])
+                sincronia["tiempos"], sincronia["nuevos"] = sincronia["nuevos"], None
+                aviso, inicio = "La IA sincronizó la letra con la voz", time.monotonic()
+            tiempos = sincronia["tiempos"]
             segundo = reproductor.segundo
             actual = linea_en(tiempos, segundo, adelanto)
             if reproductor.pausado:
@@ -163,6 +215,8 @@ class ReproducirConLetra:
             if reproductor.voz < 1 and not reproductor.voz_lista:
                 voz += " (preparando…)"
             mensaje = f"{_reloj(segundo)} / {_reloj(reproductor.duracion)}   ·   {voz}"
+            if sincronia.get("afinando"):
+                mensaje += "   ·   la IA está sincronizando la letra…"
             if aviso and time.monotonic() - inicio < 6:  # el aviso se ve los primeros segundos
                 mensaje = f"{aviso}   ·   {mensaje}"
             vista = VistaKaraoke(
