@@ -3,7 +3,8 @@
 // letra adelantada medio segundo, voz del artista en 100/75/50/25 % y modo
 // automático que sigue al cantante (con el reconocimiento de voz del navegador).
 
-const ADELANTO = 0.5;               // la letra se muestra medio segundo antes
+const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
+const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
 const NIVELES_VOZ = [1, 0.75, 0.5, 0.25];
 const $ = (s, r = document) => r.querySelector(s);
 const contenido = $("#contenido");
@@ -67,7 +68,19 @@ async function cargarCanciones() {
   try { base = await (await fetch("datos/canciones.json")).json(); } catch { base = []; }
   const propias = guardado.leer("propias", []);
   const e = extras();
-  canciones = [...base, ...propias].map((c) => ({ ...c, ...(e[c.id] || {}), tiempos: (e[c.id] || {}).tiempos || c.tiempos }));
+  canciones = [...base, ...propias].map((c) => {
+    const tiempos = (e[c.id] || {}).tiempos || c.tiempos;
+    return { ...c, ...(e[c.id] || {}), tiempos, palabras: ajustarPalabras(c.palabras, tiempos) };
+  });
+}
+// Si los tiempos de las líneas se afinaron a mano, las palabras se mueven con su línea.
+function ajustarPalabras(palabrasLinea, tiempos) {
+  if (!palabrasLinea || !tiempos || palabrasLinea.length !== tiempos.length) return palabrasLinea || null;
+  return palabrasLinea.map((fila, i) => {
+    if (!fila?.length) return fila;
+    const d = tiempos[i] - fila[0][0];
+    return Math.abs(d) < 0.01 ? fila : fila.map(([a, b]) => [a + d, b + d]);
+  });
 }
 const porId = (id) => canciones.find((c) => c.id === id);
 function guardarPropia(c) {
@@ -107,6 +120,38 @@ function tiemposAproximados(lineas, duracion) {
   const total = pesos.reduce((a, b) => a + b, 0), inicio = Math.min(8, duracion * 0.08), util = Math.max(1, duracion - inicio - 4);
   let acumulado = 0;
   return pesos.map((p) => { const t = inicio + util * acumulado / total; acumulado += p; return +t.toFixed(2); });
+}
+// Inicio y fin de cada palabra de la línea i (tal como se muestra, separada por
+// espacios): los de la IA si los hay; si no, repartidos según su largo, igual
+// que en karaoke/alineacion.py.
+const duraPalabra = (t) => Math.min(0.9, Math.max(0.25, 0.12 + 0.055 * t.length));
+const trozos = (linea) => linea.split(/\s+/).filter(Boolean);
+function tiemposDePalabras(c, i) {
+  if (esc.palabras[i]) return esc.palabras[i];
+  const fila = trozos(c.lineas[i] || "");
+  let r = c.palabras?.[i];
+  if (!r || r.length !== fila.length) {
+    const t = esc.tiempos, inicio = t[i], siguiente = t[i + 1] ?? inicio + 4;
+    const durs = fila.map(duraPalabra), total = durs.reduce((a, b) => a + b, 0) || 1;
+    const escala = Math.min(1, Math.max(0.3, siguiente - inicio - 0.2) / total);
+    let x = inicio;
+    r = durs.map((d) => { const par = [x, x + d * escala]; x += d * escala; return par; });
+  }
+  return (esc.palabras[i] = r);
+}
+// Pinta de azul cada palabra de la línea actual conforme se canta.
+function pintarPalabras(c, i, segundo) {
+  if (i < 0 || i >= c.lineas.length) return;
+  const tiempos = tiemposDePalabras(c, i), spans = $("#l-actual").children;
+  for (let k = 0; k < spans.length; k++) {
+    const [a, b] = tiempos[k] || [Infinity, Infinity];
+    const p = segundo <= a ? 0 : segundo >= b ? 1 : (segundo - a) / (b - a);
+    const texto = p.toFixed(3);
+    if (spans[k].dataset.p === texto) continue;
+    spans[k].dataset.p = texto;
+    spans[k].style.setProperty("--p", texto);
+    spans[k].classList.toggle("cantando", p > 0 && p < 1);
+  }
 }
 function lineaEn(tiempos, segundo) {
   let actual = -1;
@@ -200,7 +245,7 @@ function avisar(texto) {
 const reloj = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 // --------------------------------------------------------------- escenario
-const esc = { modo: null, cancion: null, linea: 0, reproductor: null, tiempos: null, raf: 0, pausado: false, reconocedor: null, sincronizando: null };
+const esc = { modo: null, cancion: null, linea: 0, reproductor: null, tiempos: null, raf: 0, pausado: false, reconocedor: null, sincronizando: null, palabras: {}, desfase: 0 };
 const ICON = {
   menos5: `<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8Zm-1.1 11h-.9v-3.3l-1 .3v-.7l1.8-.6h.1zm4.3-1.8c0 .3 0 .6-.1.8l-.3.6-.4.4-.6.1-.6-.1-.4-.4-.3-.6-.1-.8v-.7c0-.3 0-.6.1-.8l.3-.6.4-.4.6-.1.6.1.4.4.3.6.1.8zm-.9-.8-.1-.5-.1-.3-.2-.2h-.4l-.2.2-.1.3v1.9l.1.3.2.2h.4l.2-.2.1-.3.1-.5z"/></svg>`,
   mas5: `<svg viewBox="0 0 24 24"><path d="M12 5V1l5 5-5 5V7a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8Zm-1.1 11h-.9v-3.3l-1 .3v-.7l1.8-.6h.1zm4.3-1.8c0 .3 0 .6-.1.8l-.3.6-.4.4-.6.1-.6-.1-.4-.4-.3-.6-.1-.8v-.7c0-.3 0-.6.1-.8l.3-.6.4-.4.6-.1.6.1.4.4.3.6.1.8zm-.9-.8-.1-.5-.1-.3-.2-.2h-.4l-.2.2-.1.3v1.9l.1.3.2.2h.4l.2-.2.1-.3.1-.5z"/></svg>`,
@@ -212,15 +257,17 @@ const ICON = {
   play: `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`,
   pausa: `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14Zm8-14v14h4V5h-4Z"/></svg>`,
   siguiente: `<svg viewBox="0 0 24 24"><path d="M8.6 16.6 13.2 12 8.6 7.4 10 6l6 6-6 6z"/></svg>`,
+  afinar: `<svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3ZM3 5v2h10V5H3Zm10 16v-2h8v-2h-8v-2h-2v6h2ZM7 9v2H3v2h4v2h2V9H7Zm14 4v-2H11v2h10Zm-6-4h2V7h4V5h-4V3h-2v6Z"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
 function abrirEscenario(modo, cancion, linea = 0) {
   cerrarEscenario(true);
-  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "" });
+  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", palabras: {}, desfase: +guardado.leer("desfase", 0) || 0 });
   $("#escenario").hidden = false;
   document.body.style.overflow = "hidden";
   pintarEscenario();
+  mostrarIsla();
   if (modo === "pista") iniciarPista();
   if (modo === "automatico") iniciarAutomatico();
 }
@@ -230,6 +277,8 @@ function cerrarEscenario(silencioso) {
   try { esc.reconocedor?.stop(); } catch { /* ya detenido */ }
   esc.reconocedor = null; esc.sincronizando = null;
   $("#escenario").hidden = true;
+  $("#escenario").classList.remove("quieto");
+  clearTimeout(temporizadorIsla);
   document.body.style.overflow = "";
   if (!silencioso && esc.cancion && esc.modo !== "automatico") {
     const veces = guardado.leer("veces", {}); veces[esc.cancion.id] = (veces[esc.cancion.id] || 0) + 1; guardado.escribir("veces", veces);
@@ -241,7 +290,18 @@ function pintarLetra(lineas, actual, extra = {}) {
   const caja = $("#esc-letra");
   if (caja.dataset.actual !== String(actual)) { caja.classList.remove("cambio"); void caja.offsetWidth; caja.classList.add("cambio"); caja.dataset.actual = actual; }
   $("#l-previa").textContent = extra.previa ?? l(actual - 1);
-  $("#l-actual").textContent = extra.actual ?? (actual >= lineas.length ? "Fin de la canción" : l(Math.max(actual, 0)));
+  const elActual = $("#l-actual");
+  if (extra.conPalabras && extra.actual === undefined && actual < lineas.length) {
+    // cada palabra en su <span> para irla pintando (solo se arma al cambiar de línea)
+    const clave = `${Math.max(actual, 0)}|${lineas.length}`;
+    if (elActual.dataset.palabras !== clave) {
+      elActual.dataset.palabras = clave;
+      elActual.innerHTML = trozos(l(Math.max(actual, 0))).map((t) => `<span class="p">${escapar(t)}</span>`).join(" ");
+    }
+  } else {
+    delete elActual.dataset.palabras;
+    elActual.textContent = extra.actual ?? (actual >= lineas.length ? "Fin de la canción" : l(Math.max(actual, 0)));
+  }
   $("#l-siguiente").textContent = extra.siguiente ?? (actual >= lineas.length ? "" : l(Math.max(actual, 0) + 1));
   $("#l-despues").textContent = extra.despues ?? (actual >= lineas.length ? "" : l(Math.max(actual, 0) + 2));
 }
@@ -253,28 +313,28 @@ function pintarEscenario() {
   const isla = $("#isla");
   if (esc.modo === "pista") {
     isla.innerHTML = `
-      <div class="barra-tiempo"><span id="t-actual">0:00</span><input id="t-barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición"><span id="t-total">0:00</span></div>
-      <div class="fila">
-        <button class="control" data-accion="menos5">${ICON.menos5}−5 s</button>
-        <button class="control" data-accion="inicio">${ICON.inicio}Inicio</button>
-        <button class="control" data-accion="mas5">${ICON.mas5}+5 s</button>
-        <button class="control" data-accion="sincronizar" title="Marcar con toques el inicio de cada línea">${ICON.siguiente}Afinar</button>
-      </div>
-      <div class="etiqueta-voz"><span>Voz del artista</span><span class="tenue">al bajarla se escucha mejor a quien canta</span></div>
-      <div class="niveles" role="group" aria-label="Voz del artista">${NIVELES_VOZ.map((n) => `<button data-voz="${n}" class="${n === 1 ? "activo" : ""}">${n * 100} %</button>`).join("")}</div>
-      <div style="height:12px"></div>
-      <button class="boton" data-accion="pausa" id="b-principal">${ICON.pausa} Pausa</button>`;
+      <div class="isla-fila">
+        <button class="redondo" data-accion="pausa" id="b-principal" aria-label="Pausa" title="Pausa (espacio)">${ICON.pausa}</button>
+        <button class="mini" data-accion="menos5" aria-label="Regresar 5 segundos" title="−5 s (←)">${ICON.menos5}</button>
+        <button class="mini" data-accion="mas5" aria-label="Adelantar 5 segundos" title="+5 s (→)">${ICON.mas5}</button>
+        <div class="barra-tiempo"><span id="t-actual">0:00</span><input id="t-barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición"><span id="t-total">0:00</span></div>
+        <div class="niveles" role="group" aria-label="Voz del artista" title="Voz del artista: al bajarla se escucha mejor a quien canta">
+          <span class="niveles-icono" aria-hidden="true">${ICON.voz}</span>${NIVELES_VOZ.map((n) => `<button data-voz="${n}" class="${n === 1 ? "activo" : ""}" aria-label="Voz del artista al ${n * 100} %">${n * 100}</button>`).join("")}
+        </div>
+        <button class="mini" data-accion="sincronizar" aria-label="Afinar la sincronía" title="Afinar: marca con toques el inicio de cada línea">${ICON.afinar}</button>
+      </div>`;
     const barra = $("#t-barra");
     barra.addEventListener("input", () => esc.reproductor && esc.reproductor.ir(barra.value / 100 * esc.reproductor.duracion));
+    barra.addEventListener("change", () => barra.blur());   // que la isla se pueda ocultar después
   } else {
     isla.innerHTML = `
-      <div class="fila">
-        <button class="control" data-accion="atras">${ICON.atras}Atrás</button>
-        <button class="control" data-accion="igual">${ICON.igual}Igual</button>
-        <button class="control" data-accion="repetir">${ICON.repetir}Repetir</button>
-        <button class="control" data-accion="pausa" id="b-pausa">${ICON.pausa}Pausa</button>
-      </div>
-      <button class="boton ${esc.modo === "automatico" ? "automatico" : ""}" data-accion="continuar">${ICON.siguiente} ${esc.modo === "automatico" ? "Siguiente línea" : "Continuar"}</button>`;
+      <div class="isla-fila">
+        <button class="mini con-texto" data-accion="atras" title="Atrás (A)">${ICON.atras}<span>Atrás</span></button>
+        <button class="mini con-texto" data-accion="igual" title="Igual (I)">${ICON.igual}<span>Igual</span></button>
+        <button class="mini con-texto" data-accion="repetir" title="Repetir (R)">${ICON.repetir}<span>Repetir</span></button>
+        <button class="mini con-texto" data-accion="pausa" id="b-pausa" title="Pausa (G / S)">${ICON.pausa}<span>Pausa</span></button>
+        <button class="boton ${esc.modo === "automatico" ? "automatico" : ""}" data-accion="continuar" title="C / Enter">${ICON.siguiente} ${esc.modo === "automatico" ? "Siguiente línea" : "Continuar"}</button>
+      </div>`;
     actualizarManual();
   }
 }
@@ -302,13 +362,19 @@ async function iniciarPista(desde = 0, voz = 1) {
 function actualizarPista() {
   const r = esc.reproductor, c = esc.cancion;
   if (!r) return;
-  const duracion = r.duracion, s = r.segundo;
+  const duracion = r.duracion, reloj_ = r.segundo, s = reloj_ + esc.desfase;   // desfase: [ y ] afinan la letra
   if (!esc.tiempos && duracion) esc.tiempos = c.tiempos || tiemposAproximados(c.lineas, duracion);
-  $("#esc-sub").textContent = `${reloj(s)} / ${reloj(duracion)}`;
-  $("#t-actual").textContent = reloj(s); $("#t-total").textContent = reloj(duracion);
-  if (duracion && document.activeElement !== $("#t-barra")) $("#t-barra").value = (s / duracion) * 100;
-  $("#esc-progreso").style.width = `${duracion ? (s / duracion) * 100 : 0}%`;
-  $("#b-principal").innerHTML = r.pausado ? `${ICON.play} Reproducir` : `${ICON.pausa} Pausa`;
+  $("#esc-sub").textContent = `${reloj(reloj_)} / ${reloj(duracion)}`;
+  $("#t-actual").textContent = reloj(reloj_); $("#t-total").textContent = reloj(duracion);
+  if (duracion && document.activeElement !== $("#t-barra")) $("#t-barra").value = (reloj_ / duracion) * 100;
+  $("#esc-progreso").style.width = `${duracion ? (reloj_ / duracion) * 100 : 0}%`;
+  const principal = $("#b-principal");
+  if (principal.dataset.pausado !== String(r.pausado)) {
+    principal.dataset.pausado = String(r.pausado);
+    principal.innerHTML = r.pausado ? ICON.play : ICON.pausa;
+    principal.setAttribute("aria-label", r.pausado ? "Reproducir" : "Pausa");
+    if (r.pausado) mostrarIsla(); else programarOcultarIsla();
+  }
   if (!esc.tiempos) return;
   if (esc.sincronizando) {
     estado("AFINANDO", "intro");
@@ -322,10 +388,13 @@ function actualizarPista() {
   else if (actual < 0) estado("INTRO", "intro");
   else estado("SONANDO");
   if (actual < 0) {
-    pintarLetra(c.lineas, 0, { previa: "" });
+    pintarLetra(c.lineas, 0, { previa: "", conPalabras: true });
+    pintarPalabras(c, 0, s);
     $("#esc-mensaje").textContent = `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
   } else {
-    pintarLetra(c.lineas, r.audio.ended ? c.lineas.length : actual);
+    const linea = r.audio.ended ? c.lineas.length : actual;
+    pintarLetra(c.lineas, linea, { conPalabras: true });
+    pintarPalabras(c, linea, s);
     $("#esc-mensaje").textContent = esc.aviso && performance.now() < esc.avisoHasta ? esc.aviso
       : (c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo");
   }
@@ -338,9 +407,10 @@ function empezarSincronizacion() {
 }
 function marcarLinea() {
   const s = esc.sincronizando, c = esc.cancion;
-  s.marcas.push(+(esc.reproductor.segundo + ADELANTO * 0.4).toFixed(2));   // compensa el tiempo de reacción
+  s.marcas.push(+Math.max(0, esc.reproductor.segundo - 0.1).toFixed(2));   // compensa el tiempo de reacción
   if (s.marcas.length >= c.lineas.length) {
-    c.tiempos = s.marcas; esc.tiempos = s.marcas; esc.sincronizando = null;
+    c.palabras = ajustarPalabras(c.palabras, s.marcas);
+    c.tiempos = s.marcas; esc.tiempos = s.marcas; esc.sincronizando = null; esc.palabras = {};
     guardarExtra(c.id, { tiempos: s.marcas });
     if (c.propia) guardarPropia(c);
     esc.reproductor.ir(0);
@@ -355,7 +425,7 @@ function actualizarManual() {
   $("#esc-sub").textContent = `Línea ${Math.min(esc.linea + 1, c.lineas.length)} de ${c.lineas.length}${esc.modo === "automatico" ? " · automático" : ""}`;
   $("#esc-progreso").style.width = `${Math.min(1, esc.linea / c.lineas.length) * 100}%`;
   estado(esc.pausado ? "EN PAUSA" : (esc.linea >= c.lineas.length ? "TERMINÓ" : (esc.modo === "automatico" ? "SIGUIENDO" : "CANTANDO")), esc.pausado ? "pausa" : "");
-  const pausa = $("#b-pausa"); if (pausa) pausa.innerHTML = esc.pausado ? `${ICON.play}Seguir` : `${ICON.pausa}Pausa`;
+  const pausa = $("#b-pausa"); if (pausa) pausa.innerHTML = esc.pausado ? `${ICON.play}<span>Seguir</span>` : `${ICON.pausa}<span>Pausa</span>`;
   pintarLetra(c.lineas, esc.linea);
   if (esc.modo === "manual") $("#esc-mensaje").textContent = esc.pausado ? "En pausa mientras el cantante afina. Toca «Seguir»." : "Toca la letra o presiona C / Enter para avanzar";
 }
@@ -466,7 +536,7 @@ $("#escenario").addEventListener("click", (e) => {
   if (e.target.closest("#esc-letra")) {
     if (esc.sincronizando) marcarLinea();
     else if (esc.modo === "manual" || esc.modo === "automatico") accion("continuar");
-    else if (esc.reproductor) accion("pausa");
+    else if (esc.reproductor && !esc.islaOcultaAlTocar) ocultarIsla(true);   // tocar la letra oculta o muestra la isla
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -475,8 +545,44 @@ document.addEventListener("keydown", (e) => {
   if (esc.sincronizando && (tecla === " " || tecla === "enter")) { e.preventDefault(); marcarLinea(); return; }
   const mapa = { escape: "cerrar", c: "continuar", enter: "continuar", arrowright: esc.modo === "pista" ? "mas5" : "continuar",
     arrowleft: esc.modo === "pista" ? "menos5" : "atras", a: "atras", i: "igual", r: "repetir", g: "pausa", s: "pausa", " ": "pausa" };
-  if (mapa[tecla]) { e.preventDefault(); accion(mapa[tecla]); }
+  if (mapa[tecla]) { e.preventDefault(); accion(mapa[tecla]); return; }
+  if (esc.modo === "pista" && (tecla === "[" || tecla === "]")) {   // afinar la letra a mano, de 0.1 en 0.1 s
+    esc.desfase = Math.round((esc.desfase + (tecla === "]" ? 0.1 : -0.1)) * 10) / 10;
+    guardado.escribir("desfase", esc.desfase);
+    avisar(esc.desfase === 0 ? "Letra junto con la voz" : `Letra ${Math.abs(esc.desfase).toFixed(1)} s ${esc.desfase > 0 ? "antes" : "después"}`);
+  }
 });
+
+// La isla se oculta si no se mueve el mouse (o no se toca la pantalla) y
+// vuelve en cuanto hay movimiento. Se queda mientras la canción está en pausa,
+// mientras se afina o si el puntero o el foco del teclado están en ella.
+let temporizadorIsla = 0;
+function mostrarIsla() {
+  const escenario = $("#escenario");
+  if (escenario.hidden) return;
+  escenario.classList.remove("quieto");
+  programarOcultarIsla();
+}
+function programarOcultarIsla() {
+  clearTimeout(temporizadorIsla);
+  temporizadorIsla = setTimeout(() => ocultarIsla(), ESPERA_ISLA);
+}
+function ocultarIsla(forzar = false) {
+  const escenario = $("#escenario"), isla = $("#isla");
+  if (escenario.hidden) return;
+  const enPausa = esc.modo === "pista" ? (!esc.reproductor || esc.reproductor.pausado) : esc.pausado;
+  const ocupada = isla.matches(":hover") || isla.querySelector(":focus-visible") || esc.sincronizando;
+  if (!forzar && (enPausa || ocupada)) { programarOcultarIsla(); return; }
+  clearTimeout(temporizadorIsla);
+  escenario.classList.add("quieto");
+}
+$("#escenario").addEventListener("pointerdown", () => {
+  esc.islaOcultaAlTocar = $("#escenario").classList.contains("quieto");
+  mostrarIsla();
+});
+$("#escenario").addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") mostrarIsla(); });
+$("#escenario").addEventListener("wheel", mostrarIsla, { passive: true });
+document.addEventListener("keydown", () => mostrarIsla());
 
 // ------------------------------------------------------------------ vistas
 const vistas = {

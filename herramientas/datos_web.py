@@ -34,14 +34,19 @@ def main() -> int:
         audio = audios.get(tuple(palabras(nombre)[:2]))
         datos = tiempos.get(nombre, {})
         t = datos.get("tiempos") if datos.get("lineas") == len(lineas) else None
+        # tiempos de cada palabra (para pintarla al cantarla), si cuadran con la letra
+        p = datos.get("palabras") if t else None
+        if p and [len(f) for f in p] != [len(l.split()) for l in lineas]:
+            p = None
         cancion = {"id": f"ejemplo-{codigo}", "codigo": codigo, "nombre": nombre, "lineas": lineas,
-                   "idioma": detectar_idioma(lineas), "tiempos": t, "audio": None,
+                   "idioma": detectar_idioma(lineas), "tiempos": t, "palabras": p, "audio": None,
                    "autor": "Edgar Alessandro Chocon Oliva", "ejemplo": True}
         if audio:
             shutil.copy2(audio, web / "audio" / audio.name)
             cancion["audio"] = f"audio/{audio.name}"
         salida.append(cancion)
-        print(f"{nombre}: {len(lineas)} líneas · tiempos {'exactos' if t else 'aproximados'} · "
+        print(f"{nombre}: {len(lineas)} líneas · tiempos {'exactos' if t else 'aproximados'}"
+              f"{' (con palabras)' if p else ''} · "
               f"audio {'sí' if audio else 'no'}")
     (web / "datos" / "canciones.json").write_text(json.dumps(salida, ensure_ascii=False, indent=1) + "\n",
                                                   encoding="utf-8")
