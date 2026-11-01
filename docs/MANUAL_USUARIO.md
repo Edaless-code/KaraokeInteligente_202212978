@@ -522,6 +522,15 @@ La carpeta `web/` (o el archivo **KaraokeWeb.zip** de la página de descargas) e
 
 En el **modo automático** se elige el idioma en que se va a cantar (español por omisión); al reconocer la canción, si tiene pista, la pista entra donde va el cantante con la voz del artista al 25 %. Con **[** y **]** se adelanta o atrasa la letra de 0.1 en 0.1 s.
 
+## Novedades de la versión 1.2
+
+- **Letra junto con la voz:** cada línea cambia cuando se canta (antes iba medio segundo adelantada). En la web, además, cada palabra se pinta de azul pálido al cantarla; con **[** y **]** se afina de 0.1 en 0.1 s.
+- **Modo automático en español:** escucha en español y en inglés a la vez aunque las canciones de la base sean de un solo idioma (`idiomas_automatico`); en la web se elige el idioma y se cambia con **L**.
+- **Modo automático con música:** al reconocer la canción entra la pista donde va el cantante con la voz del artista al 25 %, también si la canción aún no tiene tiempos exactos (la IA los afina mientras suena).
+- **Letra con IA desde un MP3** en la versión de escritorio (*Agregar → Desde un MP3*) y en la web (*Solo el audio*).
+- **Versión web completa:** biblioteca con código, corregir, eliminar con papelera y «Deshacer», importar y exportar `.txt`, programa del cantante, historial con estadísticas, isla de controles compacta que se oculta sola y la IA que sincroniza las letras.
+- **Canciones de ejemplo con tiempos exactos** de cada línea y palabra (`ejemplos/tiempos.json`): suenan a tiempo desde la primera vez.
+
 ## Novedades de la versión 1.1
 
 - **Micrófono automático:** en *d → e* (consola) o *Ajustes → Micrófono* (escritorio) se ven todos los micrófonos con su sistema de audio. Con **Enter / Automático** el programa prueba los micrófonos y usa el primero que de verdad capta sonido; si el elegido se desconecta, cambia solo a otro.

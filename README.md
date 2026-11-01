@@ -15,7 +15,7 @@ Tres versiones: **consola** (Windows, la de la entrega), **escritorio con interf
 
 ## ⬇️ Descargar
 
-Todo está en la página de **[Releases](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases)**. Abre la versión más reciente y, en **Assets**, descarga:
+Todo está en la **[última versión](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases/latest)** de Releases; en **Assets**, descarga:
 
 | Plataforma | Archivo |
 |---|---|
@@ -28,7 +28,7 @@ Todo está en la página de **[Releases](https://github.com/Edaless-code/Karaoke
 
 No hace falta instalar Python ni nada más.
 
-1. Descarga **`KaraokeInteligente-Windows.zip`** desde [Releases](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases).
+1. Descarga **`KaraokeInteligente-Windows.zip`** desde la [última versión](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases/latest).
 2. Clic derecho sobre el ZIP → **Extraer todo…** (por ejemplo, en `C:\KaraokeInteligente`).
 3. Abre la carpeta. Hay dos programas, que comparten las mismas canciones:
    - **`KaraokeInteligente.exe`**: versión de **consola** (la que pide el enunciado).
@@ -45,7 +45,7 @@ Requisitos: Windows 10 u 11 de 64 bits, unos 1.5 GB libres y un micrófono para 
 
 ## 🤖 Ejecutar en Android (APK)
 
-1. En el teléfono, descarga **`KaraokeInteligente-Android.apk`** desde [Releases](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases).
+1. En el teléfono, descarga **`KaraokeInteligente-Android.apk`** desde la [última versión](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases/latest).
 2. Ábrelo. Si Android lo pide, permite **"Instalar apps de origen desconocido"** para el navegador o el administrador de archivos.
 3. Toca **Instalar** y luego **Abrir**.
 4. Para tener canciones: **Biblioteca → + → Canciones de ejemplo**, o agrega las tuyas con **Pegar o escribir la letra**.
@@ -65,7 +65,7 @@ cd KaraokeInteligente_202212978
 pip install -r requirements.txt
 pip install faster-whisper     # opcional: mejora el modo automático
 python main.py                 # versión de consola (Windows/Linux/macOS)
-python -m pytest               # 182 pruebas automáticas
+python -m pytest               # 192 pruebas automáticas
 ```
 
 App móvil en la computadora: `pip install kivy plyer` y luego `python movil/main.py`.
