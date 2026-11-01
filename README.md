@@ -72,7 +72,7 @@ App móvil en la computadora: `pip install kivy plyer` y luego `python movil/mai
 
 ## 🌐 Versión web
 
-La carpeta [`web/`](web) es una página sin dependencias (HTML, CSS y JavaScript) con la biblioteca, los modos manual y automático, la reproducción con letra y la voz del artista al 100/75/50/25 %. Para probarla, en Windows basta con doble clic en `web/abrir.bat`; en cualquier sistema:
+La carpeta [`web/`](web) es la versión para el navegador (HTML, CSS y JavaScript, sin compilar) con todo lo de la consola: biblioteca, modos manual y automático, reproducción con la letra pintada palabra por palabra y la voz del artista al 100/75/50/25 %, programa, historial y papelera. Trae una IA (Whisper dentro del navegador) que sincroniza la letra con la voz o la escribe a partir del MP3. Descarga: [KaraokeWeb.zip](https://github.com/Edaless-code/KaraokeInteligente_202212978/releases/download/web/KaraokeWeb.zip). Para probarla, en Windows basta con doble clic en `web/abrir.bat`; en cualquier sistema:
 
 ```bash
 python web/servir.py

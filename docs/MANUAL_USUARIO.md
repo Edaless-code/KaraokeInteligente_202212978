@@ -73,6 +73,8 @@ En la misma carpeta está **`KaraokeEscritorio.exe`**. Usa la misma base de dato
 - El primer uso carga las canciones de ejemplo con sus pistas.
 - **Biblioteca:** filtros arriba (*Todas, Favoritas* y cada género). En cada canción: corazón para favorita, **Género** y **Agregar portada**.
 - **Ajustes → Micrófono:** lista completa de micrófonos y opción **Automático** (usa el primero que capta sonido).
+- **Agregar → Desde un MP3:** se elige la canción y la IA escribe su letra con el inicio de cada línea; se guarda con su pista (si ya existía, se le asocia la pista y su letra se sincroniza). Después se revisa con **Corregir**.
+- **Modo automático con música:** al reconocer la canción entra la pista donde va el cantante, con la voz del artista al 25 %, aunque la canción aún no tenga tiempos exactos: empieza con tiempos aproximados y la IA los afina mientras suena.
 
 ### Opción B: desde el código fuente (Python)
 
@@ -496,6 +498,29 @@ Las letras de las canciones **"Sound of You"** y **"Ghost of you"** son obra ori
 
 Se incluyen en este proyecto **únicamente como material de ejemplo y de prueba** del Karaoke Inteligente. No se autoriza copiarlas, distribuirlas, interpretarlas públicamente ni usarlas con otro fin sin el permiso escrito del autor. La licencia del código del programa no se extiende a estas letras ni a estos audios.
 
+
+## Versión web *(agregada)*
+
+La carpeta `web/` (o el archivo **KaraokeWeb.zip** de la página de descargas) es la versión para el navegador. En Windows se abre con doble clic en `abrir.bat`; en cualquier sistema, con `python servir.py`. Tiene todo lo de la consola:
+
+| En la consola | En la web |
+|---|---|
+| m, a, r: modo manual, automático y reproducir con letra | *Modo manual*, *Modo automático* y *Reproducir con letra* en cada canción; la letra se pinta palabra por palabra junto con la voz |
+| w, x: ver canciones y letras | *Biblioteca* (con el código de cada canción) y el detalle de cada canción |
+| f: agregar canciones | *Agregar canciones*: con su letra, **solo con el audio (la IA escribe la letra)** o importando un `.txt` con varias |
+| u: corregir una letra | Botón del lápiz en cada canción |
+| b: borrar (se puede recuperar) | Botón del basurero, con «Deshacer», y la *Papelera* |
+| g: favoritas, géneros y portadas | Corazón, *Género* y *Agregar portada* |
+| p: programa del cantante | *Programa*: agregar por nombre, pegar una lista o cargar `PROGRAMA.txt`, ordenar y saltar |
+| h: historial | *Historial*: interpretaciones, las más cantadas y totales |
+
+**La IA en el navegador.** La web usa Whisper dentro del navegador: la primera vez descarga el modelo (*Rápido* ≈ 80 MB o *Preciso* ≈ 250 MB, necesita internet) y después queda guardado. Con ella:
+
+- una canción agregada con su letra y su pista se **sincroniza sola** (cuándo se canta cada línea y cada palabra); si una canción sin tiempos exactos se reproduce, empieza con tiempos aproximados y la IA la sincroniza mientras suena;
+- con **Solo el audio**, la IA escribe la letra con sus tiempos; se revisa antes de guardarla y, si se corrige, los tiempos se ajustan sin volver a escuchar la canción;
+- el botón **Sincronizar ahora** de cada canción la vuelve a sincronizar.
+
+En el **modo automático** se elige el idioma en que se va a cantar (español por omisión); al reconocer la canción, si tiene pista, la pista entra donde va el cantante con la voz del artista al 25 %. Con **[** y **]** se adelanta o atrasa la letra de 0.1 en 0.1 s.
 
 ## Novedades de la versión 1.1
 
