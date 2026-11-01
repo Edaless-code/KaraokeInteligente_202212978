@@ -1,7 +1,10 @@
-// Karaoke Inteligente · versión web (sin dependencias).
+// Karaoke Inteligente · versión web.
 // Mismas ideas que el programa de escritorio: búsqueda tolerante a errores,
-// letra adelantada medio segundo, voz del artista en 100/75/50/25 % y modo
-// automático que sigue al cantante (con el reconocimiento de voz del navegador).
+// letra pintada palabra por palabra junto con la voz, voz del artista en
+// 100/75/50/25 %, modo automático que sigue al cantante (reconocimiento de voz
+// del navegador) y una IA (Whisper, en ia.js) que sincroniza la letra con la
+// pista o la escribe a partir del audio.
+import * as ia from "./ia.js";
 
 const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
 const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
@@ -83,7 +86,8 @@ async function cargarCanciones() {
     // Si se cambió la letra o la pista, los tiempos originales ya no sirven.
     const propiosTiempos = Array.isArray(x.lineas) || x.sinTiemposBase;
     const tiempos = x.tiempos || (propiosTiempos ? null : c.tiempos);
-    return { ...c, ...x, tiempos, palabras: propiosTiempos ? null : ajustarPalabras(c.palabras, tiempos) };
+    const palabrasBase = x.palabras || (propiosTiempos ? null : c.palabras);
+    return { ...c, ...x, tiempos, palabras: ajustarPalabras(palabrasBase, tiempos) };
   }).filter((c) => !c.eliminada);
   canciones = todas.filter((c) => !c.papelera);
   papelera = todas.filter((c) => c.papelera).sort((a, b) => b.papelera - a.papelera);
@@ -226,6 +230,51 @@ const historial = {
     if (completada) programa.marcarCantada(i.id);
   },
 };
+
+// ------------------------------------------------------------ la IA (Whisper)
+const modeloIA = () => (guardado.leer("modelo-ia", "rapido") === "preciso" ? "preciso" : "rapido");
+const sincronizando = new Map();       // id de canción -> tarea en curso
+const progresoIA = new Map();          // id de canción -> texto del avance
+function textoProgreso(p) {
+  if (p.fase === "descarga") return `Descargando la IA (solo la primera vez${p.megas ? `, ${p.megas} MB` : ""})… ${Math.round(p.progreso)} %`;
+  if (p.fase === "decodificando") return "Preparando la pista…";
+  return `La IA está escuchando la canción… ${Math.round(p.progreso)} %`;
+}
+async function blobDeAudio(c) {
+  if (c.audio.startsWith("idb:")) return archivos.leer(c.audio.slice(4));
+  return (await fetch(c.audio)).blob();
+}
+// La IA escucha la pista y encuentra cuándo se canta cada línea y cada palabra
+// de la letra. Se guarda: la próxima vez la canción ya empieza exacta.
+function sincronizarConIA(c, alProgreso = null) {
+  if (sincronizando.has(c.id)) return sincronizando.get(c.id);
+  const tarea = (async () => {
+    const avisarAvance = (p) => {
+      const texto = textoProgreso(p);
+      progresoIA.set(c.id, texto);
+      alProgreso?.(texto);
+      const el = document.querySelector(`[data-estado-ia="${c.id}"]`);
+      if (el) el.textContent = texto;
+    };
+    const blob = await blobDeAudio(c);
+    if (!blob) throw new Error("no se encontró la pista");
+    const r = await ia.sincronizarLetra(blob, c.lineas, { idioma: c.idioma === "en" ? "en" : "es", modelo: modeloIA(), alProgreso: avisarAvance });
+    guardarExtra(c.id, { tiempos: r.tiempos, palabras: r.palabras, sincronizada: "ia", sinTiemposBase: true });
+    await cargarCanciones();
+    return porId(c.id);
+  })().finally(() => { sincronizando.delete(c.id); progresoIA.delete(c.id); });
+  sincronizando.set(c.id, tarea);
+  return tarea;
+}
+async function sincronizarDesdeDetalle(c) {
+  try {
+    await sincronizarConIA(c);
+    avisar(`La letra de «${c.nombre}» quedó sincronizada con la voz`);
+  } catch (e) {
+    avisar(`No se pudo sincronizar: ${e.message}`);
+  }
+  if (location.hash.includes(c.id)) navegar();
+}
 
 // ------------------------------------------ editar, borrar y la papelera
 async function eliminarCancion(c) {
@@ -509,12 +558,13 @@ const ICON = {
   quitar: `<svg viewBox="0 0 24 24"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z"/></svg>`,
   saltar: `<svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12Zm10-12v12h2V6h-2Z"/></svg>`,
   reloj: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></svg>`,
+  ia: `<svg viewBox="0 0 24 24"><path d="M9.5 2 11 6.5 15.5 8 11 9.5 9.5 14 8 9.5 3.5 8 8 6.5 9.5 2Zm8 9 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM6 15l.8 2.2L9 18l-2.2.8L6 21l-.8-2.2L3 18l2.2-.8L6 15Z"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
 function abrirEscenario(modo, cancion, linea = 0) {
   cerrarEscenario(true);
-  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", palabras: {}, oido: [], sesion: Date.now(),
+  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", estadoIA: "", palabras: {}, oido: [], sesion: Date.now(),
     desfase: +guardado.leer("desfase", 0) || 0 });
   if (cancion) historial.iniciar(cancion, modo);
   $("#escenario").hidden = false;
@@ -598,22 +648,54 @@ function pintarEscenario() {
 // ---- modo pista (reproducir con letra)
 // `desde` y `voz` los usa el modo automático: al reconocer la canción la pista
 // entra donde va el cantante, con la voz del artista bajada.
-async function iniciarPista(desde = 0, voz = 1) {
+// `entrada`: { linea, fraccion } cuando el modo automático reconoció la canción
+// (la pista entra donde va el cantante, aunque aún no tenga tiempos exactos).
+async function iniciarPista(desde = 0, voz = 1, entrada = null) {
   const c = esc.cancion, url = await urlAudio(c);
   if (!url) { pintarLetra([], 0, { actual: "Esta canción no tiene pista de audio", siguiente: "Agrégale un MP3 desde «Agregar canción»." }); return; }
-  esc.reproductor = new Reproductor(url);
-  esc.reproductor.ajustarVoz(voz);
+  const r = esc.reproductor = new Reproductor(url);
+  r.ajustarVoz(voz);
   document.querySelectorAll("[data-voz]").forEach((x) => x.classList.toggle("activo", +x.dataset.voz === voz));
+  estado("PREPARANDO", "intro");
+  $("#esc-sub").textContent = "Cargando…";
+  const a = r.audio;
+  if (!c.tiempos || entrada) {
+    // hace falta la duración para los tiempos aproximados o el punto de entrada
+    await new Promise((ok) => {
+      if (a.readyState >= 1) return ok();
+      a.addEventListener("loadedmetadata", ok, { once: true });
+      a.addEventListener("error", ok, { once: true });
+      setTimeout(ok, 5000);
+    });
+    if (esc.reproductor !== r) return;   // se cerró mientras cargaba
+  }
+  esc.tiempos = c.tiempos || (r.duracion ? tiemposAproximados(c.lineas, r.duracion) : null);
+  if (entrada && esc.tiempos) desde = puntoDeEntrada(esc.tiempos, entrada.linea, entrada.fraccion);
   if (desde > 0) {
-    const a = esc.reproductor.audio;
     if (a.readyState >= 1) a.currentTime = desde;
     else a.addEventListener("loadedmetadata", () => { a.currentTime = desde; }, { once: true });
   }
-  estado("PREPARANDO", "intro");
-  $("#esc-sub").textContent = "Cargando…";
-  try { await esc.reproductor.reproducir(); } catch { estado("EN PAUSA", "pausa"); avisar("Toca «Reproducir» para empezar"); }
+  try { await r.reproducir(); } catch { estado("EN PAUSA", "pausa"); avisar("Toca «Reproducir» para empezar"); }
   const bucle = () => { actualizarPista(); esc.raf = requestAnimationFrame(bucle); };
   bucle();
+  // Sin tiempos exactos, la IA escucha la pista mientras suena y, al terminar,
+  // la letra se pasa sola a ir junto con la voz (y queda guardado).
+  if (!c.tiempos) sincronizarEnEscenario(c, r);
+}
+async function sincronizarEnEscenario(c, r) {
+  esc.estadoIA = "Preparando la IA para sincronizar la letra con la voz…";
+  try {
+    const nueva = await sincronizarConIA(c, (texto) => { if (esc.reproductor === r) esc.estadoIA = texto; });
+    if (esc.reproductor !== r || !nueva) return;
+    esc.cancion = nueva; esc.tiempos = nueva.tiempos; esc.palabras = {}; esc.estadoIA = "";
+    delete $("#l-actual").dataset.palabras;
+    esc.aviso = "Listo: la IA sincronizó la letra con la voz"; esc.avisoHasta = performance.now() + 4000;
+  } catch (e) {
+    if (esc.reproductor !== r) return;
+    esc.estadoIA = "";
+    esc.aviso = `No se pudo sincronizar con la IA (${e.message}). Va con tiempos aproximados; puedes usar «Afinar».`;
+    esc.avisoHasta = performance.now() + 9000;
+  }
 }
 function actualizarPista() {
   const r = esc.reproductor, c = esc.cancion;
@@ -646,7 +728,7 @@ function actualizarPista() {
   if (actual < 0) {
     pintarLetra(c.lineas, 0, { previa: "", conPalabras: true });
     pintarPalabras(c, 0, s);
-    $("#esc-mensaje").textContent = `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
+    $("#esc-mensaje").textContent = esc.estadoIA || `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
   } else {
     const linea = r.audio.ended ? c.lineas.length : actual;
     historial.avance(linea);
@@ -654,7 +736,7 @@ function actualizarPista() {
     pintarLetra(c.lineas, linea, { conPalabras: true });
     pintarPalabras(c, linea, s);
     $("#esc-mensaje").textContent = esc.aviso && performance.now() < esc.avisoHasta ? esc.aviso
-      : (c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo");
+      : esc.estadoIA || (c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo");
   }
 }
 // "Afinar": la canción vuelve al inicio y cada toque marca el inicio de una línea.
@@ -797,12 +879,14 @@ function puntoDeEntrada(tiempos, linea, fraccion = 0.6, latencia = LATENCIA_RECO
   return Math.max(0, inicio + fraccion * (fin - inicio) + latencia);
 }
 function entrarConPista(cancion, linea) {
-  if (!cancion.audio || !cancion.tiempos || cancion.tiempos.length !== cancion.lineas.length) return false;
+  if (!cancion.audio) return false;
+  if (cancion.tiempos && cancion.tiempos.length !== cancion.lineas.length) cancion.tiempos = null;
   const rec = esc.reconocedor; esc.reconocedor = null;
   try { rec?.stop(); } catch { /* ya detenido */ }
-  Object.assign(esc, { modo: "pista", tiempos: cancion.tiempos, pausado: false });
+  Object.assign(esc, { modo: "pista", tiempos: null, pausado: false });
   pintarEscenario();
-  iniciarPista(puntoDeEntrada(cancion.tiempos, linea), VOZ_AL_RECONOCER);
+  // sin tiempos exactos entra con los aproximados y la IA los afina mientras suena
+  iniciarPista(0, VOZ_AL_RECONOCER, { linea, fraccion: 0.6 });
   esc.aviso = "Canción reconocida: la pista entra donde vas cantando, con la voz del artista al 25 %";
   esc.avisoHasta = performance.now() + 6000;
   return true;
@@ -963,6 +1047,11 @@ const vistas = {
             <button class="chip" data-genero="${c.id}">Género: ${escapar(c.genero || "ninguno")}</button>
             <button class="chip" data-portada="${c.id}">${c.portada ? "Cambiar portada" : "Agregar portada"}</button>
           </div>
+          ${c.audio ? `<div class="estado-sincronia ${c.tiempos ? "exacta" : ""}">
+            ${ICON.ia}<span data-estado-ia="${c.id}">${progresoIA.get(c.id) || (c.sincronizada === "ia" ? "Letra sincronizada con la voz por la IA"
+              : c.ejemplo && c.tiempos ? "Letra sincronizada con la voz" : c.tiempos ? "Tiempos marcados a mano" : "Tiempos aproximados: la IA los sincroniza con la voz")}</span>
+            ${sincronizando.has(c.id) ? "" : `<button class="boton fantasma chico" data-sincronizar="${c.id}">${c.tiempos ? "Volver a sincronizar" : "Sincronizar ahora"}</button>`}
+          </div>` : ""}
           <div class="acciones">
             ${c.audio ? `<button class="boton" data-cantar="${c.id}">${ICON.play} Reproducir con letra</button>` : ""}
             <button class="boton ${c.audio ? "secundario" : ""}" data-manual="${c.id}">${ICON.siguiente} ${c.audio ? "Cantar sin pista" : "Cantar"}</button>
@@ -1027,18 +1116,23 @@ const vistas = {
     }));
   },
 
-  agregar() {
+  agregar(parametros) {
+    const conIA = parametros.get("forma") === "audio";
     contenido.innerHTML = `
       <p class="antetitulo">Biblioteca</p>
       <h1>Agregar canciones</h1>
-      ${formularioCancion()}
+      <div class="niveles formas" role="tablist" aria-label="Cómo agregarla">
+        <a role="tab" href="#agregar" class="${conIA ? "" : "activo"}" aria-selected="${!conIA}">Con su letra</a>
+        <a role="tab" href="#agregar?forma=audio" class="${conIA ? "activo" : ""}" aria-selected="${conIA}">${ICON.ia} Solo el audio: la IA escribe la letra</a>
+      </div>
+      ${conIA ? formularioAudio() : formularioCancion()}
       <section class="tarjeta" style="margin-top:20px">
         <h2 style="margin-top:0">Importar desde un archivo de texto</h2>
         <p class="nota">Varias canciones a la vez, en el formato de <code>canciones.txt</code>: el nombre en el primer renglón y la letra debajo, con un renglón vacío entre canciones (o <code># Nombre</code> antes de cada letra). Las etiquetas como «Coro» o «[Verso 2]» se quitan solas y las que ya existen se omiten.</p>
         <label class="boton secundario" style="width:max-content">${ICON.importar} Elegir archivo .txt<input type="file" id="importar-txt" accept=".txt,text/plain" hidden></label>
       </section>`;
     $("#importar-txt").addEventListener("change", (e) => e.target.files[0] && importarTexto(e.target.files[0]));
-    activarFormulario(null);
+    if (conIA) activarFormularioAudio(); else activarFormulario(null);
   },
 
   editar(parametros) {
@@ -1182,6 +1276,89 @@ const vistas = {
   },
 };
 
+// Agregar con solo el audio: la IA escucha la canción y escribe la letra con
+// los tiempos de cada línea y palabra; se revisa antes de guardarla (como f → m
+// en la consola).
+function formularioAudio() {
+  return `
+    <form id="form-audio" class="tarjeta formulario">
+      <label>Pista de audio (MP3, WAV, OGG…)<input class="campo" type="file" name="audio" accept="audio/*" required></label>
+      <label>Nombre (opcional: si lo dejas vacío se toma del archivo)<input class="campo" name="nombre" maxlength="150" placeholder="Mi canción"></label>
+      <div class="dos-columnas">
+        <label>Idioma de la canción
+          <select class="campo" name="idioma"><option value="es">Español</option><option value="en">Inglés</option></select>
+        </label>
+        <label>IA
+          <select class="campo" name="modelo">
+            ${Object.entries(ia.MODELOS).map(([k, m]) => `<option value="${k}" ${modeloIA() === k ? "selected" : ""}>${m.nombre} (${m.detalle})</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <p class="nota" style="margin:0">La IA corre en tu navegador: la primera vez descarga el modelo (necesita internet) y después queda guardado. Escuchar una canción tarda entre uno y pocos minutos.</p>
+      <div id="avance-ia" class="avance-ia" hidden><div class="barra"><span></span></div><p class="nota"></p></div>
+      <button class="boton" type="submit">${ICON.ia} Escribir la letra con IA</button>
+    </form>
+    <div id="revision-ia"></div>`;
+}
+function activarFormularioAudio() {
+  const form = $("#form-audio");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const datos = new FormData(form), archivo = datos.get("audio");
+    if (!archivo || !archivo.size) { avisar("Elige el archivo de audio"); return; }
+    if (archivo.size > 40 * 1024 * 1024) { avisar("La pista pesa más de 40 MB"); return; }
+    guardado.escribir("modelo-ia", datos.get("modelo"));
+    const avance = $("#avance-ia"), barra = avance.querySelector(".barra span"), texto = avance.querySelector("p");
+    avance.hidden = false;
+    form.querySelector("[type=submit]").disabled = true;
+    try {
+      const r = await ia.letraDesdeAudio(archivo, {
+        idioma: datos.get("idioma"), modelo: datos.get("modelo"),
+        alProgreso: (p) => { texto.textContent = textoProgreso(p); barra.style.width = `${p.progreso || 0}%`; },
+      });
+      form.hidden = true;
+      mostrarRevision(archivo, (datos.get("nombre") || "").trim() || ia.nombreDesdeArchivo(archivo.name), datos.get("idioma"), r);
+    } catch (error) {
+      avance.hidden = true;
+      form.querySelector("[type=submit]").disabled = false;
+      avisar(`No se pudo escribir la letra: ${error.message}`);
+    }
+  });
+}
+function mostrarRevision(archivo, nombre, idioma, r) {
+  $("#revision-ia").innerHTML = `
+    <form id="form-revision" class="tarjeta formulario">
+      <h2 style="margin:0">Revisa la letra que escribió la IA</h2>
+      <p class="nota" style="margin:0">${r.lineas.length} líneas, cada una con su tiempo. Corrige lo que haga falta: al guardar, los tiempos se ajustan a tus cambios sin volver a escuchar la canción.</p>
+      <label>Nombre de la canción<input class="campo" name="nombre" required maxlength="150" value="${escapar(nombre)}"></label>
+      <label>Letra<textarea class="campo" name="letra" rows="14">${escapar(r.lineas.join("\n"))}</textarea></label>
+      <div class="acciones" style="margin:0">
+        <button class="boton" type="submit">Guardar canción</button>
+        <a class="boton secundario" href="#agregar?forma=audio" data-descartar>Descartar</a>
+      </div>
+    </form>`;
+  $("#form-revision").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const datos = new FormData(e.target), nombreFinal = datos.get("nombre").replace(/\s+/g, " ").trim();
+    const { lineas } = limpiarLetra(datos.get("letra").split(/\r?\n/));
+    if (!nombreFinal || !lineas.length) { avisar("Escribe el nombre y la letra"); return; }
+    if (existeNombre(nombreFinal)) { avisar("Ya existe una canción con ese nombre"); return; }
+    // si se corrigió la letra, se vuelve a alinear con lo que oyó la IA
+    const igual = lineas.join("\n") === r.lineas.join("\n");
+    const sincronia = igual ? r : ia.tiemposDePalabras(lineas, r.oidas, r.duracion);
+    const id = "propia-" + Date.now();
+    await archivos.guardar("audio:" + id, archivo);
+    const propias = guardado.leer("propias", []);
+    propias.push({ id, codigo: siguienteCodigo(), nombre: nombreFinal, lineas, idioma, audio: "idb:audio:" + id, tiempos: null, propia: true });
+    guardado.escribir("propias", propias);
+    guardarExtra(id, { tiempos: sincronia.tiempos, palabras: sincronia.palabras, sincronizada: "ia", sinTiemposBase: true });
+    await cargarCanciones();
+    avisar("Canción guardada con su letra y sus tiempos");
+    location.hash = `cancion?id=${id}`;
+  });
+  $("#form-revision textarea").focus();
+}
+
 // Formulario de una canción: nueva (c = null) o para corregirla.
 function formularioCancion(c = null) {
   const idioma = c?.idioma || "es";
@@ -1200,6 +1377,7 @@ function formularioCancion(c = null) {
         <label>${c?.audio ? "Cambiar la pista" : "Pista de audio (opcional)"}<input class="campo" type="file" name="audio" accept="audio/*"></label>
       </div>
       ${c?.audio ? `<label class="casilla"><input type="checkbox" name="quitar-audio"> Quitar la pista de esta canción</label>` : ""}
+      <label class="casilla"><input type="checkbox" name="sincronizar" checked> Si hay pista, que la IA sincronice la letra con la voz al guardar</label>
       <p class="nota" style="margin:0">${c ? "Si cambias la letra o la pista, los tiempos vuelven a ser aproximados; con «Afinar» los marcas de nuevo." : "Las etiquetas como «Coro» o «[Verso 2]» se quitan solas. Con la pista podrás reproducirla con la letra; al principio los tiempos son aproximados y con «Afinar» los marcas a tu ritmo."}</p>
       <div class="acciones" style="margin:0">
         <button class="boton" type="submit">${c ? "Guardar cambios" : "Guardar canción"}</button>
@@ -1229,12 +1407,14 @@ function activarFormulario(c) {
       const cambios = { nombre, idioma, audio };
       const cambioLetra = lineas.join("\n") !== c.lineas.join("\n");
       if (cambioLetra) cambios.lineas = lineas;
-      if (cambioLetra || audio !== c.audio) Object.assign(cambios, { tiempos: null, sinTiemposBase: true });
+      if (cambioLetra || audio !== c.audio) Object.assign(cambios, { tiempos: null, palabras: null, sincronizada: null, sinTiemposBase: true });
       guardarExtra(id, cambios);
     }
     await cargarCanciones();
     avisar(c ? "Cambios guardados" : (ajustadas ? `Canción guardada (${ajustadas} línea(s) larga(s) divididas)` : "Canción guardada"));
     location.hash = `cancion?id=${id}`;
+    const guardada = porId(id);
+    if (guardada?.audio && !guardada.tiempos && datos.get("sincronizar")) sincronizarDesdeDetalle(guardada);
   });
 }
 
@@ -1273,7 +1453,11 @@ contenido.addEventListener("click", async (e) => {
       await cargarCanciones(); navegar(); avisar("Papelera vacía");
     }
   } else if (t("[data-exportar]")) exportarBiblioteca();
-  else if (t("[data-al-programa]")) {
+  else if (t("[data-sincronizar]")) {
+    const c = porId(t("[data-sincronizar]").dataset.sincronizar);
+    t("[data-sincronizar]").remove();
+    sincronizarDesdeDetalle(c);
+  } else if (t("[data-al-programa]")) {
     const c = porId(t("[data-al-programa]").dataset.alPrograma);
     programa.agregar([c.nombre]);
     avisar(`«${c.nombre}» agregada al programa`, { texto: "Ver", accion: () => { location.hash = "programa"; } });

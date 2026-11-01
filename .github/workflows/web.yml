@@ -5,7 +5,7 @@ name: Versión web
 
 on:
   push:
-    paths: ["web/**", ".github/workflows/web.yml"]
+    paths: ["web/**", "herramientas/prueba_ia_web.mjs", ".github/workflows/web.yml"]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +16,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ia:
+    name: IA en el navegador (Whisper real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Instalar Playwright y Chromium
+        run: |
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: Probar la IA con las canciones de ejemplo
+        run: |
+          python web/servir.py --sin-navegador &
+          sleep 2
+          node herramientas/prueba_ia_web.mjs
+
   zip:
     runs-on: ubuntu-latest
     steps:

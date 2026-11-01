@@ -167,6 +167,22 @@ select.campo { appearance: none; background-image: linear-gradient(45deg, transp
 @media (max-width: 520px) { .fila-lista .boton.chico span { display: none; } .fila-lista .boton.chico { padding: 0 11px; } }
 .vacio { padding: 40px 16px; text-align: center; color: var(--texto-3); border: 1px dashed var(--trazo); border-radius: var(--radio); }
 
+/* IA: estado de la sincronía, avance y las dos formas de agregar */
+.estado-sincronia { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 0; padding: 10px 12px; border-radius: 14px; background: var(--superficie); border: 1px solid var(--trazo); color: var(--texto-2); font-size: .88rem; }
+.estado-sincronia svg { width: 18px; height: 18px; color: var(--acento-texto); }
+.estado-sincronia span { flex: 1; min-width: 180px; }
+.estado-sincronia.exacta svg { color: var(--exito); }
+.estado-sincronia .boton { min-height: 32px; }
+.avance-ia { display: grid; gap: 6px; }
+.avance-ia .barra { height: 8px; margin: 0; }
+.avance-ia .barra span { width: 0; transition: width .3s linear; }
+.avance-ia .nota { margin: 0; font-variant-numeric: tabular-nums; }
+.niveles.formas { margin: 8px 0 16px; max-width: 560px; }
+.niveles.formas a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 10px; border-radius: 9px; color: var(--texto-2); font-size: .85rem; font-weight: 600; text-align: center; }
+.niveles.formas a svg { width: 16px; height: 16px; }
+.niveles.formas a.activo { background: var(--superficie-alta); color: var(--texto); }
+#revision-ia .formulario { margin-top: 16px; }
+
 /* Barra lateral agrupada como el menú de la consola */
 .nav-grupo { margin: 18px 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-3); }
 
