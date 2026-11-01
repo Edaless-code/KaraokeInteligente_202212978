@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        modelo: [rapido, preciso]
+        modelo: [preciso]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

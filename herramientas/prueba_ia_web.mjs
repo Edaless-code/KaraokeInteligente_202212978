@@ -75,6 +75,9 @@ try {
   await pagina.waitForFunction(() => document.querySelector(".estado-sincronia")?.textContent.includes("sincronizada"), null, { timeout: 25 * 60 * 1000, polling: 2000 });
   const dep2 = await pagina.evaluate(() => globalThis.__iaDepuracion);
   for (const v of dep2?.ventanas || []) console.log(`  ventana ${v.desde}s: ${JSON.stringify(v.texto).slice(0, 160)} · ${JSON.stringify(v.palabras)}`);
+  console.log("===OIDAS_INICIO===");
+  console.log(JSON.stringify((dep2?.palabras || []).map((p) => [p.texto, +p.inicio.toFixed(2), +p.fin.toFixed(2)])));
+  console.log("===OIDAS_FIN===");
   const extras = await pagina.evaluate(() => JSON.parse(localStorage.getItem("karaoke:extras")));
   const propia = Object.entries(extras).find(([, x]) => x.sincronizada === "ia" && x.tiempos?.length === 19);
   const esperados = JSON.parse(readFileSync(RAIZ + "ejemplos/tiempos.json", "utf8"))["Ghost of you"].tiempos;
