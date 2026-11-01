@@ -56,6 +56,10 @@ const archivos = {
     const db = await this.abrir();
     return new Promise((ok, mal) => { const t = db.transaction("archivos", "readwrite"); t.objectStore("archivos").put(blob, clave); t.oncomplete = ok; t.onerror = () => mal(t.error); });
   },
+  async borrar(clave) {
+    const db = await this.abrir();
+    return new Promise((ok) => { const t = db.transaction("archivos", "readwrite"); t.objectStore("archivos").delete(clave); t.oncomplete = ok; t.onerror = ok; });
+  },
   async leer(clave) {
     const db = await this.abrir();
     return new Promise((ok) => { const r = db.transaction("archivos").objectStore("archivos").get(clave); r.onsuccess = () => ok(r.result || null); r.onerror = () => ok(null); });
@@ -63,8 +67,10 @@ const archivos = {
 };
 
 // ---------------------------------------------------------------- canciones
-let canciones = [];
-const extras = () => guardado.leer("extras", {});   // por id: favorita, genero, tiempos, portada
+let canciones = [], papelera = [], todas = [];
+// Por id: favorita, genero, tiempos, portada y las ediciones (nombre, lineas,
+// idioma, audio), papelera (fecha en que se borró) o eliminada (para siempre).
+const extras = () => guardado.leer("extras", {});
 function guardarExtra(id, cambios) { const e = extras(); e[id] = { ...(e[id] || {}), ...cambios }; guardado.escribir("extras", e); }
 
 async function cargarCanciones() {
@@ -72,10 +78,15 @@ async function cargarCanciones() {
   try { base = await (await fetch("datos/canciones.json")).json(); } catch { base = []; }
   const propias = guardado.leer("propias", []);
   const e = extras();
-  canciones = [...base, ...propias].map((c) => {
-    const tiempos = (e[c.id] || {}).tiempos || c.tiempos;
-    return { ...c, ...(e[c.id] || {}), tiempos, palabras: ajustarPalabras(c.palabras, tiempos) };
-  });
+  todas = [...base, ...propias].map((c) => {
+    const x = e[c.id] || {};
+    // Si se cambió la letra o la pista, los tiempos originales ya no sirven.
+    const propiosTiempos = Array.isArray(x.lineas) || x.sinTiemposBase;
+    const tiempos = x.tiempos || (propiosTiempos ? null : c.tiempos);
+    return { ...c, ...x, tiempos, palabras: propiosTiempos ? null : ajustarPalabras(c.palabras, tiempos) };
+  }).filter((c) => !c.eliminada);
+  canciones = todas.filter((c) => !c.papelera);
+  papelera = todas.filter((c) => c.papelera).sort((a, b) => b.papelera - a.papelera);
 }
 // Si los tiempos de las líneas se afinaron a mano, las palabras se mueven con su línea.
 function ajustarPalabras(palabrasLinea, tiempos) {
@@ -91,6 +102,162 @@ function guardarPropia(c) {
   const propias = guardado.leer("propias", []).filter((p) => p.id !== c.id);
   propias.push({ id: c.id, codigo: c.codigo, nombre: c.nombre, lineas: c.lineas, idioma: c.idioma, audio: c.audio, tiempos: c.tiempos, propia: true });
   guardado.escribir("propias", propias);
+}
+
+// ------------------------------------------------- letras: limpiar e importar
+// Mismas reglas que karaoke/importador.py y karaoke/texto.py.
+const ETIQUETA = /^\s*(?:\[.*\]|\(.*\)|(?:coro|chorus|estribillo|verso|verse|puente|bridge|intro|outro|pre-?coro|pre-?chorus)\s*\d*\s*(?:\(.*\))?\s*:?)\s*$/i;
+const ENCABEZADO = /^\s*(?:#+|nombre\s*:)\s*(.*)$/i;
+const MAX_CARACTERES = 80, MAX_LINEAS = 500;
+function dividirLinea(linea, maximo = MAX_CARACTERES) {
+  if (linea.length <= maximo) return linea ? [linea] : [];
+  const partes = []; let actual = "";
+  for (let palabra of linea.split(" ")) {
+    while (palabra.length > maximo) { if (actual) { partes.push(actual); actual = ""; } partes.push(palabra.slice(0, maximo)); palabra = palabra.slice(maximo); }
+    const candidato = actual ? `${actual} ${palabra}` : palabra;
+    if (candidato.length <= maximo) actual = candidato; else { partes.push(actual); actual = palabra; }
+  }
+  if (actual) partes.push(actual);
+  return partes;
+}
+// Quita renglones vacíos y etiquetas ("Coro", "[Verso 2]"), junta espacios y
+// divide las líneas muy largas. Devuelve { lineas, ajustadas }.
+function limpiarLetra(renglones) {
+  let ajustadas = 0;
+  const lineas = [];
+  for (const crudo of renglones) {
+    const linea = crudo.replace(/\s+/g, " ").trim();
+    if (!linea || ETIQUETA.test(linea)) continue;
+    const partes = dividirLinea(linea);
+    if (partes.length > 1) ajustadas++;
+    lineas.push(...partes);
+  }
+  return { lineas: lineas.slice(0, MAX_LINEAS), ajustadas };
+}
+// Formato de canciones.txt: "# Nombre" (o "Nombre:") antes de cada letra, o
+// bloques separados por un renglón vacío con el nombre en el primer renglón.
+// Los renglones que empiezan con // son comentarios.
+function analizarTexto(texto) {
+  const renglones = texto.replace(/\r\n?/g, "\n").split("\n").map((r) => r.trimEnd())
+    .filter((r) => !r.trimStart().startsWith("//") && !ETIQUETA.test(r));
+  const canciones_ = [];
+  if (renglones.some((r) => ENCABEZADO.test(r))) {
+    let actual = null;
+    for (const r of renglones) {
+      const m = r.match(ENCABEZADO);
+      if (m) { actual = { nombre: m[1].trim(), renglones: [] }; canciones_.push(actual); }
+      else if (r.trim() && actual) actual.renglones.push(r);
+    }
+  } else {
+    let bloque = [];
+    for (const r of [...renglones, ""]) {
+      if (r.trim()) bloque.push(r.trim());
+      else if (bloque.length) { canciones_.push({ nombre: bloque[0], renglones: bloque.slice(1) }); bloque = []; }
+    }
+  }
+  return canciones_.map((c) => ({ nombre: c.nombre.replace(/\s+/g, " ").trim().slice(0, 150), ...limpiarLetra(c.renglones) }));
+}
+const PALABRAS_ES = new Set("de la que el en y los se no mi tu te por con una un es lo como mas pero yo amor corazon quiero sin las del al eres vida".split(" "));
+const PALABRAS_EN = new Set("the you and i to my it in of is that love your dont be so for on me all what when im can".split(" "));
+function detectarIdioma(lineas) {
+  let es = 0, en = 0;
+  for (const p of palabras(lineas.join(" "))) { if (PALABRAS_ES.has(p)) es++; if (PALABRAS_EN.has(p)) en++; }
+  return en > es ? "en" : "es";
+}
+const existeNombre = (nombre, salvo = null) => todas.some((c) => c.id !== salvo && normalizar(c.nombre).trim() === normalizar(nombre).trim());
+const siguienteCodigo = () => Math.max(0, ...todas.map((x) => x.codigo || 0)) + 1;
+
+// ------------------------------------------ editar, borrar y la papelera
+async function eliminarCancion(c) {
+  const si = await dialogo({ titulo: `¿Eliminar «${c.nombre}»?`, mensaje: "Pasa a la papelera; desde ahí la puedes recuperar.", aceptar: "Eliminar", peligro: true });
+  if (!si) return;
+  guardarExtra(c.id, { papelera: Date.now() });
+  await cargarCanciones();
+  location.hash = "biblioteca";
+  avisar(`«${c.nombre}» está en la papelera`, { texto: "Deshacer", accion: () => recuperarCancion(c.id) });
+}
+async function recuperarCancion(id) {
+  guardarExtra(id, { papelera: null });
+  await cargarCanciones(); navegar();
+  avisar("Canción recuperada");
+}
+async function eliminarParaSiempre(c) {
+  const e = extras();
+  if (c.propia) {
+    guardado.escribir("propias", guardado.leer("propias", []).filter((p) => p.id !== c.id));
+    delete e[c.id];
+    await archivos.borrar("audio:" + c.id);
+  } else {
+    e[c.id] = { eliminada: true };   // las de ejemplo vienen del sitio: solo se ocultan
+  }
+  await archivos.borrar("portada:" + c.id);
+  guardado.escribir("extras", e);
+}
+
+// Diálogo propio (en lugar de prompt/confirm): devuelve true/false, o el texto
+// escrito si lleva campo (null al cancelar).
+function dialogo({ titulo, mensaje = "", campo = null, aceptar = "Aceptar", cancelar = "Cancelar", peligro = false }) {
+  return new Promise((ok) => {
+    const d = document.createElement("dialog");
+    d.className = "dialogo";
+    d.innerHTML = `
+      <form method="dialog">
+        <h2>${escapar(titulo)}</h2>
+        ${mensaje ? `<p class="nota">${escapar(mensaje)}</p>` : ""}
+        ${campo ? `<input class="campo" name="valor" autocomplete="off" maxlength="${campo.max || 120}" value="${escapar(campo.valor || "")}" placeholder="${escapar(campo.placeholder || "")}" ${campo.lista?.length ? 'list="dialogo-lista"' : ""}>
+          ${campo.lista?.length ? `<datalist id="dialogo-lista">${campo.lista.map((v) => `<option value="${escapar(v)}">`).join("")}</datalist>` : ""}` : ""}
+        <div class="dialogo-botones">
+          <button class="boton ${peligro ? "peligro" : ""}" value="aceptar">${escapar(aceptar)}</button>
+          <button class="boton secundario" value="cancelar" formnovalidate>${escapar(cancelar)}</button>
+        </div>
+      </form>`;
+    document.body.append(d);
+    d.addEventListener("close", () => {
+      const si = d.returnValue === "aceptar";
+      const valor = campo ? (si ? d.querySelector("input").value : null) : si;
+      d.remove(); ok(valor);
+    });
+    d.showModal();
+    const entrada = d.querySelector("input");
+    if (entrada) { entrada.focus(); entrada.select(); } else d.querySelector('[value="aceptar"]').focus();
+  });
+}
+
+function descargar(nombre, texto) {
+  const url = URL.createObjectURL(new Blob([texto], { type: "text/plain;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: nombre });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function exportarBiblioteca() {
+  const texto = ["// Biblioteca del Karaoke Inteligente, exportada el " + new Date().toLocaleString("es"),
+    "// Formato: # Nombre y debajo su letra. Se puede volver a importar.", "",
+    ...canciones.map((c) => [`# ${c.nombre}`, ...(c.ejemplo ? [`// © ${c.autor || ""}. Todos los derechos reservados.`] : []), ...c.lineas, ""].join("\n"))].join("\n");
+  descargar("canciones.txt", texto);
+  avisar(`${canciones.length} canciones exportadas a canciones.txt`);
+}
+async function importarTexto(archivo) {
+  if (archivo.size > 2 * 1024 * 1024) { avisar("El archivo pesa más de 2 MB"); return; }
+  const encontradas = analizarTexto(await archivo.text());
+  const agregadas = [], omitidas = [];
+  const propias = guardado.leer("propias", []);
+  for (const c of encontradas) {
+    if (!c.nombre) { omitidas.push("(sin nombre)"); continue; }
+    if (!c.lineas.length) { omitidas.push(`${c.nombre} (sin letra)`); continue; }
+    if (existeNombre(c.nombre) || agregadas.some((a) => normalizar(a.nombre) === normalizar(c.nombre))) { omitidas.push(`${c.nombre} (ya existía)`); continue; }
+    const nueva = { id: `propia-${Date.now()}-${agregadas.length}`, codigo: siguienteCodigo() + agregadas.length, nombre: c.nombre,
+      lineas: c.lineas, idioma: detectarIdioma(c.lineas), audio: null, tiempos: null, propia: true };
+    agregadas.push(nueva); propias.push(nueva);
+  }
+  guardado.escribir("propias", propias);
+  await cargarCanciones();
+  await dialogo({
+    titulo: agregadas.length ? `Se agregaron ${agregadas.length} canción(es)` : "No se agregó ninguna canción",
+    mensaje: [agregadas.length ? agregadas.map((a) => a.nombre).join(", ") + "." : "",
+      omitidas.length ? `Omitidas: ${omitidas.join(", ")}.` : ""].filter(Boolean).join(" "),
+    aceptar: "Listo", cancelar: "Cerrar",
+  });
+  location.hash = "biblioteca";
 }
 
 // Portada: la imagen elegida o un arte generado con los colores de la paleta.
@@ -242,9 +409,18 @@ async function urlAudio(c) {
 
 // ---------------------------------------------------------------- avisos
 let temporizadorAviso;
-function avisar(texto) {
-  const a = $("#aviso"); a.textContent = texto; a.classList.add("visible");
-  clearTimeout(temporizadorAviso); temporizadorAviso = setTimeout(() => a.classList.remove("visible"), 2600);
+function avisar(texto, boton = null) {
+  const a = $("#aviso");
+  a.textContent = texto;
+  a.classList.toggle("con-accion", !!boton);
+  if (boton) {
+    const b = Object.assign(document.createElement("button"), { textContent: boton.texto, className: "aviso-accion" });
+    b.addEventListener("click", () => { a.classList.remove("visible"); boton.accion(); });
+    a.append(b);
+  }
+  a.classList.add("visible");
+  clearTimeout(temporizadorAviso);
+  temporizadorAviso = setTimeout(() => a.classList.remove("visible"), boton ? 6000 : 2600);
 }
 const reloj = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -262,6 +438,11 @@ const ICON = {
   pausa: `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14Zm8-14v14h4V5h-4Z"/></svg>`,
   siguiente: `<svg viewBox="0 0 24 24"><path d="M8.6 16.6 13.2 12 8.6 7.4 10 6l6 6-6 6z"/></svg>`,
   afinar: `<svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3ZM3 5v2h10V5H3Zm10 16v-2h8v-2h-8v-2h-2v6h2ZM7 9v2H3v2h4v2h2V9H7Zm14 4v-2H11v2h10Zm-6-4h2V7h4V5h-4V3h-2v6Z"/></svg>`,
+  editar: `<svg viewBox="0 0 24 24"><path d="M3 17.2V21h3.8l11-11-3.8-3.8-11 11ZM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8L20.7 7Z"/></svg>`,
+  basura: `<svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>`,
+  importar: `<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2Zm7-3 5-5h-3V4h-4v8H7l5 5Z"/></svg>`,
+  exportar: `<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM12 4 7 9h3v6h4V9h3l-5-5Z"/></svg>`,
+  recuperar: `<svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Z"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
@@ -623,7 +804,7 @@ const vistas = {
         <div>
           <p class="antetitulo">Canción destacada</p>
           <h2 style="margin:4px 0 6px">${escapar(destacada.nombre)}</h2>
-          <p class="nota">La pista suena y la letra va medio segundo adelantada. Baja la voz del artista para que se escuche la tuya.</p>
+          <p class="nota">La pista suena y cada palabra se pinta al cantarla. Baja la voz del artista para que se escuche la tuya.</p>
           <div class="acciones"><button class="boton" data-cantar="${destacada.id}">${ICON.play} Reproducir con letra</button></div>
         </div>
       </section>` : ""}
@@ -643,11 +824,17 @@ const vistas = {
       <button class="cancion" data-ver="${c.id}">
         <div class="portada">${await portadaHTML(c)}${c.favorita ? `<span class="favorita">${corazon(true)}</span>` : ""}</div>
         <strong>${escapar(c.nombre)}</strong>
-        <span>${c.lineas.length} líneas${c.genero ? " · " + escapar(c.genero) : ""}${c.audio ? "" : " · sin pista"}</span>
+        <span>Código ${c.codigo} · ${c.lineas.length} líneas${c.genero ? " · " + escapar(c.genero) : ""}${c.audio ? "" : " · sin pista"}</span>
       </button>`));
     contenido.innerHTML = `
-      <p class="antetitulo">${canciones.length} canciones</p>
-      <h1>Biblioteca</h1>
+      <div class="encabezado-vista">
+        <div><p class="antetitulo">${canciones.length} canciones</p><h1>Biblioteca</h1></div>
+        <div class="acciones-vista">
+          <a class="boton secundario chico" href="#agregar">${ICON.importar}<span>Agregar o importar</span></a>
+          <button class="boton secundario chico" data-exportar>${ICON.exportar}<span>Exportar</span></button>
+          ${papelera.length ? `<a class="boton fantasma chico" href="#papelera">${ICON.basura}<span>Papelera (${papelera.length})</span></a>` : ""}
+        </div>
+      </div>
       <div class="filtros">
         ${[["", "Todas"], ["favoritas", "Favoritas"], ...generos.map((g) => [g, g])].map(([v, t]) =>
           `<button class="chip ${v === filtro ? "activo" : ""}" data-filtro="${escapar(v)}">${escapar(t)}</button>`).join("")}
@@ -676,7 +863,9 @@ const vistas = {
           <div class="acciones">
             ${c.audio ? `<button class="boton" data-cantar="${c.id}">${ICON.play} Reproducir con letra</button>` : ""}
             <button class="boton ${c.audio ? "secundario" : ""}" data-manual="${c.id}">${ICON.siguiente} ${c.audio ? "Cantar sin pista" : "Cantar"}</button>
-            <button class="boton-icono" data-favorita="${c.id}" aria-label="Favorita" style="color:${c.favorita ? "var(--acento-texto)" : "var(--texto-2)"}">${corazon(c.favorita)}</button>
+            <button class="boton-icono" data-favorita="${c.id}" aria-label="Favorita" title="Favorita" style="color:${c.favorita ? "var(--acento-texto)" : "var(--texto-2)"}">${corazon(c.favorita)}</button>
+            <a class="boton-icono" href="#editar?id=${c.id}" aria-label="Editar" title="Corregir la letra o el nombre">${ICON.editar}</a>
+            <button class="boton-icono" data-eliminar="${c.id}" aria-label="Eliminar" title="Eliminar (se puede recuperar)">${ICON.basura}</button>
           </div>
           ${grupos.map((g, i) => `<p class="grupo-lineas">LÍNEAS ${i * 10 + 1}–${i * 10 + g.length}</p><ol class="lineas" start="${i * 10 + 1}" style="counter-reset: linea ${i * 10}">${g.map((l) => `<li>${escapar(l)}</li>`).join("")}</ol>`).join("")}
           ${c.ejemplo ? `<p class="nota tenue" style="margin-top:20px">Letra y grabación © ${escapar(c.autor || "")}. Todos los derechos reservados.</p>` : ""}
@@ -737,41 +926,108 @@ const vistas = {
   agregar() {
     contenido.innerHTML = `
       <p class="antetitulo">Biblioteca</p>
-      <h1>Agregar canción</h1>
-      <form id="form-agregar" class="tarjeta" style="display:grid;gap:14px">
-        <label>Nombre de la canción<input class="campo" name="nombre" required maxlength="150" placeholder="Mi canción"></label>
-        <label>Letra (una línea por renglón)<textarea class="campo" name="letra" required placeholder="Pega aquí la letra…"></textarea></label>
-        <label>Pista de audio (opcional, MP3 / WAV / OGG)<input class="campo" type="file" name="audio" accept="audio/*"></label>
-        <p class="nota" style="margin:0">Con la pista podrás reproducirla con la letra. Al principio los tiempos son aproximados; con «Afinar» los marcas a tu ritmo con toques.</p>
-        <button class="boton" type="submit">Guardar canción</button>
-      </form>`;
-    $("#form-agregar").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const datos = new FormData(e.target), nombre = datos.get("nombre").trim();
-      const lineas = datos.get("letra").split(/\r?\n/).map((l) => l.trim())
-        .filter((l) => l && !/^[\[(].*[\])]$/.test(l) && !/^(coro|chorus|verso|verse|puente|bridge|intro|outro)\b/i.test(l));
-      if (!nombre || !lineas.length) { avisar("Escribe el nombre y la letra"); return; }
-      if (canciones.some((c) => normalizar(c.nombre).trim() === normalizar(nombre).trim())) { avisar("Ya existe una canción con ese nombre"); return; }
-      const id = "propia-" + Date.now();
-      const c = { id, codigo: Math.max(0, ...canciones.map((x) => x.codigo || 0)) + 1, nombre, lineas,
-        idioma: /\b(the|you|and|love|my|is)\b/i.test(lineas.join(" ")) ? "en" : "es", audio: null, tiempos: null, propia: true };
-      const archivo = datos.get("audio");
-      if (archivo && archivo.size) {
-        if (archivo.size > 40 * 1024 * 1024) { avisar("La pista pesa más de 40 MB"); return; }
-        await archivos.guardar("audio:" + id, archivo); c.audio = "idb:audio:" + id;
-      }
-      guardarPropia(c); await cargarCanciones();
-      avisar("Canción guardada"); location.hash = `cancion?id=${id}`;
-    });
+      <h1>Agregar canciones</h1>
+      ${formularioCancion()}
+      <section class="tarjeta" style="margin-top:20px">
+        <h2 style="margin-top:0">Importar desde un archivo de texto</h2>
+        <p class="nota">Varias canciones a la vez, en el formato de <code>canciones.txt</code>: el nombre en el primer renglón y la letra debajo, con un renglón vacío entre canciones (o <code># Nombre</code> antes de cada letra). Las etiquetas como «Coro» o «[Verso 2]» se quitan solas y las que ya existen se omiten.</p>
+        <label class="boton secundario" style="width:max-content">${ICON.importar} Elegir archivo .txt<input type="file" id="importar-txt" accept=".txt,text/plain" hidden></label>
+      </section>`;
+    $("#importar-txt").addEventListener("change", (e) => e.target.files[0] && importarTexto(e.target.files[0]));
+    activarFormulario(null);
+  },
+
+  editar(parametros) {
+    const c = porId(parametros.get("id"));
+    if (!c) { location.hash = "biblioteca"; return; }
+    contenido.innerHTML = `
+      <p class="antetitulo">Código ${c.codigo}</p>
+      <h1>Corregir «${escapar(c.nombre)}»</h1>
+      ${formularioCancion(c)}
+      <div class="acciones" style="justify-content:flex-end">
+        <button class="boton fantasma" data-eliminar="${c.id}">${ICON.basura} Eliminar canción</button>
+      </div>`;
+    activarFormulario(c);
+  },
+
+  papelera() {
+    contenido.innerHTML = `
+      <div class="encabezado-vista">
+        <div><p class="antetitulo">Biblioteca</p><h1>Papelera</h1></div>
+        ${papelera.length ? `<div class="acciones-vista"><button class="boton fantasma chico" data-vaciar>${ICON.basura}<span>Vaciar papelera</span></button></div>` : ""}
+      </div>
+      <p class="nota">Las canciones eliminadas quedan aquí hasta que las recuperes o las elimines para siempre.</p>
+      ${papelera.length ? `<div class="lista">${papelera.map((c) => `
+        <div class="fila-lista">
+          <div><strong>${escapar(c.nombre)}</strong><span class="nota">Código ${c.codigo} · ${c.lineas.length} líneas · eliminada el ${new Date(c.papelera).toLocaleDateString("es")}</span></div>
+          <button class="boton secundario chico" data-recuperar="${c.id}">${ICON.recuperar}<span>Recuperar</span></button>
+          <button class="boton fantasma chico" data-borrar-siempre="${c.id}" aria-label="Eliminar para siempre">${ICON.basura}<span>Eliminar</span></button>
+        </div>`).join("")}</div>` : `<p class="vacio">La papelera está vacía.</p>`}`;
   },
 };
+
+// Formulario de una canción: nueva (c = null) o para corregirla.
+function formularioCancion(c = null) {
+  const idioma = c?.idioma || "es";
+  return `
+    <form id="form-cancion" class="tarjeta formulario">
+      <label>Nombre de la canción<input class="campo" name="nombre" required maxlength="150" placeholder="Mi canción" value="${escapar(c?.nombre || "")}"></label>
+      <label>Letra (una línea por renglón)<textarea class="campo" name="letra" required rows="12" placeholder="Pega aquí la letra…">${escapar(c ? c.lineas.join("\n") : "")}</textarea></label>
+      <div class="dos-columnas">
+        <label>Idioma
+          <select class="campo" name="idioma">
+            ${c ? "" : `<option value="auto">Detectar solo</option>`}
+            <option value="es" ${c && idioma === "es" ? "selected" : ""}>Español</option>
+            <option value="en" ${c && idioma === "en" ? "selected" : ""}>Inglés</option>
+          </select>
+        </label>
+        <label>${c?.audio ? "Cambiar la pista" : "Pista de audio (opcional)"}<input class="campo" type="file" name="audio" accept="audio/*"></label>
+      </div>
+      ${c?.audio ? `<label class="casilla"><input type="checkbox" name="quitar-audio"> Quitar la pista de esta canción</label>` : ""}
+      <p class="nota" style="margin:0">${c ? "Si cambias la letra o la pista, los tiempos vuelven a ser aproximados; con «Afinar» los marcas de nuevo." : "Las etiquetas como «Coro» o «[Verso 2]» se quitan solas. Con la pista podrás reproducirla con la letra; al principio los tiempos son aproximados y con «Afinar» los marcas a tu ritmo."}</p>
+      <div class="acciones" style="margin:0">
+        <button class="boton" type="submit">${c ? "Guardar cambios" : "Guardar canción"}</button>
+        ${c ? `<a class="boton secundario" href="#cancion?id=${c.id}">Cancelar</a>` : ""}
+      </div>
+    </form>`;
+}
+function activarFormulario(c) {
+  $("#form-cancion").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const datos = new FormData(e.target), nombre = datos.get("nombre").replace(/\s+/g, " ").trim();
+    const { lineas, ajustadas } = limpiarLetra(datos.get("letra").split(/\r?\n/));
+    if (!nombre || !lineas.length) { avisar("Escribe el nombre y la letra"); return; }
+    if (existeNombre(nombre, c?.id)) { avisar("Ya existe una canción con ese nombre"); return; }
+    const idioma = datos.get("idioma") === "auto" ? detectarIdioma(lineas) : datos.get("idioma");
+    const archivo = datos.get("audio");
+    if (archivo && archivo.size > 40 * 1024 * 1024) { avisar("La pista pesa más de 40 MB"); return; }
+    const id = c?.id || "propia-" + Date.now();
+    let audio = c ? c.audio : null;
+    if (archivo && archivo.size) { await archivos.guardar("audio:" + id, archivo); audio = "idb:audio:" + id; }
+    else if (datos.get("quitar-audio")) { await archivos.borrar("audio:" + id); audio = null; }
+    if (!c) {
+      const propias = guardado.leer("propias", []);
+      propias.push({ id, codigo: siguienteCodigo(), nombre, lineas, idioma, audio, tiempos: null, propia: true });
+      guardado.escribir("propias", propias);
+    } else {
+      const cambios = { nombre, idioma, audio };
+      const cambioLetra = lineas.join("\n") !== c.lineas.join("\n");
+      if (cambioLetra) cambios.lineas = lineas;
+      if (cambioLetra || audio !== c.audio) Object.assign(cambios, { tiempos: null, sinTiemposBase: true });
+      guardarExtra(id, cambios);
+    }
+    await cargarCanciones();
+    avisar(c ? "Cambios guardados" : (ajustadas ? `Canción guardada (${ajustadas} línea(s) larga(s) divididas)` : "Canción guardada"));
+    location.hash = `cancion?id=${id}`;
+  });
+}
 
 // ------------------------------------------------------------ navegación
 async function navegar() {
   const [ruta, consulta] = (location.hash.slice(1) || "inicio").split("?");
   const parametros = new URLSearchParams(consulta || "");
   const vista = vistas[ruta] || vistas.inicio;
-  document.querySelectorAll("[data-ruta]").forEach((a) => a.classList.toggle("activa", a.dataset.ruta === (ruta === "cancion" ? "biblioteca" : ruta)));
+  document.querySelectorAll("[data-ruta]").forEach((a) => a.classList.toggle("activa", a.dataset.ruta === (["cancion", "editar", "papelera"].includes(ruta) ? "biblioteca" : ruta)));
   await vista(parametros);
   contenido.focus({ preventScroll: true });
   window.scrollTo(0, 0);
@@ -787,9 +1043,23 @@ contenido.addEventListener("click", async (e) => {
   else if (t("[data-favorita]")) {
     const c = porId(t("[data-favorita]").dataset.favorita); c.favorita = !c.favorita;
     guardarExtra(c.id, { favorita: c.favorita }); avisar(c.favorita ? "Agregada a favoritas" : "Quitada de favoritas"); navegar();
-  } else if (t("[data-genero]")) {
+  } else if (t("[data-eliminar]")) eliminarCancion(porId(t("[data-eliminar]").dataset.eliminar));
+  else if (t("[data-recuperar]")) recuperarCancion(t("[data-recuperar]").dataset.recuperar);
+  else if (t("[data-borrar-siempre]")) {
+    const c = papelera.find((x) => x.id === t("[data-borrar-siempre]").dataset.borrarSiempre);
+    if (c && await dialogo({ titulo: `¿Eliminar «${c.nombre}» para siempre?`, mensaje: "Ya no se podrá recuperar.", aceptar: "Eliminar para siempre", peligro: true })) {
+      await eliminarParaSiempre(c); await cargarCanciones(); navegar(); avisar("Canción eliminada para siempre");
+    }
+  } else if (t("[data-vaciar]")) {
+    if (await dialogo({ titulo: `¿Vaciar la papelera?`, mensaje: `Se eliminarán para siempre ${papelera.length} canción(es).`, aceptar: "Vaciar", peligro: true })) {
+      for (const c of [...papelera]) await eliminarParaSiempre(c);
+      await cargarCanciones(); navegar(); avisar("Papelera vacía");
+    }
+  } else if (t("[data-exportar]")) exportarBiblioteca();
+  else if (t("[data-genero]")) {
     const c = porId(t("[data-genero]").dataset.genero);
-    const genero = prompt("Género o carpeta (vacío para quitarlo):", c.genero || "");
+    const generos = [...new Set(canciones.map((x) => x.genero).filter(Boolean))].sort();
+    const genero = await dialogo({ titulo: "Género o carpeta", mensaje: "Déjalo vacío para quitarlo.", campo: { valor: c.genero || "", placeholder: "Por ejemplo: Baladas", lista: generos, max: 60 }, aceptar: "Guardar" });
     if (genero !== null) { c.genero = genero.trim().slice(0, 60); guardarExtra(c.id, { genero: c.genero }); navegar(); }
   } else if (t("[data-portada]")) {
     const c = porId(t("[data-portada]").dataset.portada), entrada = document.createElement("input");
