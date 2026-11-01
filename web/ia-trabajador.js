@@ -14,6 +14,23 @@ const SOLAPE = 2;     // segundos compartidos entre ventanas (no se pierden pala
 
 let tuberia = null;
 let modeloCargado = "";
+let suprimidos = [];
+
+// Fichas que no son voz (♪, [MUSIC], (risas)…): se prohíben como lo hace
+// faster-whisper en la consola (suppress_tokens=[-1]); si no, Whisper escribe
+// "[MUSIC]" en una ventana con intro y se salta lo que se canta.
+function fichasSinVoz(tokenizador) {
+  const simbolos = [...'"#()*+/:;<=>@[\\]^_`{|}~「」『』',
+    ..."<< >> <<< >>> -- --- -( -[ (' (\" (( )) ((( ))) [[ ]] {{ }} ♪♪ ♪♪♪".split(" ")];
+  const musica = [..."♩♪♫♬♭♮♯"];
+  const ids = new Set();
+  const codificar = (t) => tokenizador.encode(t, { add_special_tokens: false });
+  for (const t of [" -", " '"]) { const e = codificar(t); if (e.length) ids.add(e[0]); }
+  for (const s of [...simbolos, ...musica]) {
+    for (const e of [codificar(s), codificar(" " + s)]) if (e.length === 1 || (musica.includes(s) && e.length)) ids.add(e[0]);
+  }
+  return [...ids];
+}
 
 async function cargar(modelo, avisar) {
   if (tuberia && modeloCargado === modelo) return tuberia;
@@ -28,6 +45,7 @@ async function cargar(modelo, avisar) {
     },
   });
   modeloCargado = modelo;
+  suprimidos = [...new Set([...(tuberia.model.generation_config?.suppress_tokens || []), ...fichasSinVoz(tuberia.tokenizer)])];
   return tuberia;
 }
 
@@ -44,7 +62,7 @@ self.onmessage = async ({ data }) => {
       const desde = inicio / FRECUENCIA;
       const primera = inicio === 0, ultima = fin >= audio.length;
       const salida = await escuchar(audio.subarray(inicio, fin), {
-        return_timestamps: "word", task: "transcribe", ...(idioma ? { language: idioma } : {}),
+        return_timestamps: "word", task: "transcribe", suppress_tokens: suprimidos, ...(idioma ? { language: idioma } : {}),
       });
       // De cada ventana se toma lo que cae fuera de la mitad del solape con
       // sus vecinas, para no repetir ni perder palabras en el corte.
@@ -54,7 +72,8 @@ self.onmessage = async ({ data }) => {
       for (const trozo of salida.chunks || []) {
         const texto = (trozo.text || "").trim();
         const [a, b] = trozo.timestamp || [];
-        if (!texto || a == null) continue;
+        // palabras amontonadas al final de la ventana: la IA no supo dónde van
+        if (!texto || a == null || (a >= VENTANA - 0.1 && !ultima)) continue;
         const ini = desde + a, fin_ = desde + (b ?? a + 0.3);
         if (ini >= minimo && ini < maximo) palabras.push({ texto, inicio: ini, fin: Math.max(fin_, ini + 0.05) });
       }

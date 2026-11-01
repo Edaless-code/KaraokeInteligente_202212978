@@ -17,9 +17,13 @@ concurrency:
 
 jobs:
   ia:
-    name: IA en el navegador (Whisper real)
+    name: IA en el navegador (Whisper real) · ${{ matrix.modelo }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        modelo: [rapido, preciso]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,7 +38,7 @@ jobs:
         run: |
           python web/servir.py --sin-navegador &
           sleep 2
-          node herramientas/prueba_ia_web.mjs
+          MODELO_IA=${{ matrix.modelo }} node herramientas/prueba_ia_web.mjs
 
   zip:
     runs-on: ubuntu-latest
