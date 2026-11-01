@@ -79,7 +79,8 @@ try {
   console.log(JSON.stringify((dep2?.palabras || []).map((p) => [p.texto, +p.inicio.toFixed(2), +p.fin.toFixed(2)])));
   console.log("===OIDAS_FIN===");
   const extras = await pagina.evaluate(() => JSON.parse(localStorage.getItem("karaoke:extras")));
-  const propia = Object.entries(extras).find(([, x]) => x.sincronizada === "ia" && x.tiempos?.length === 19);
+  const id = await pagina.evaluate(() => JSON.parse(localStorage.getItem("karaoke:propias")).find((c) => c.nombre === "Ghost prueba IA").id);
+  const propia = [id, extras[id]];
   const esperados = JSON.parse(readFileSync(RAIZ + "ejemplos/tiempos.json", "utf8"))["Ghost of you"].tiempos;
   const difs = propia[1].tiempos.map((t, i) => Math.abs(t - esperados[i]));
   const media = difs.reduce((a, b) => a + b, 0) / difs.length;

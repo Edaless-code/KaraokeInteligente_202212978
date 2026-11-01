@@ -232,7 +232,7 @@ const historial = {
 };
 
 // ------------------------------------------------------------ la IA (Whisper)
-const modeloIA = () => (guardado.leer("modelo-ia", "rapido") === "preciso" ? "preciso" : "rapido");
+const modeloIA = () => (guardado.leer("modelo-ia", "preciso") === "rapido" ? "rapido" : "preciso");
 const sincronizando = new Map();       // id de canción -> tarea en curso
 const progresoIA = new Map();          // id de canción -> texto del avance
 function textoProgreso(p) {

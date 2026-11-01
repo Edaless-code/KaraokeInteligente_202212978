@@ -10,7 +10,9 @@ env.allowLocalModels = false;
 
 const FRECUENCIA = 16000;
 const VENTANA = 30;   // segundos que Whisper escucha de una vez
-const SOLAPE = 2;     // segundos compartidos entre ventanas (no se pierden palabras en el corte)
+// Las ventanas se solapan 10 s y de cada una se toma solo su parte central:
+// Whisper se confunde si la ventana empieza a media frase.
+const SOLAPE = 10;
 
 let tuberia = null;
 let modeloCargado = "";

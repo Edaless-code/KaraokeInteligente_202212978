@@ -128,6 +128,34 @@ function completar(inicios, lineas, duracion) {
   return r.map((t) => Math.round(t * 100) / 100);
 }
 
+// La primera palabra después de un silencio "se come" el silencio (Whisper le
+// da un inicio muy temprano: "I" de 0 a 4.3 s). Como hacen openai-whisper y
+// faster-whisper, se recortan esas palabras largas al inicio de una frase a
+// dos veces la duración típica (y si la siguiente también es larga, se reparte
+// el corte entre las dos).
+export function recortarLargas(oidas) {
+  if (oidas.length < 3) return oidas;
+  const duraciones = oidas.map((o) => o.fin - o.inicio).sort((a, b) => a - b);
+  const mediana = Math.min(0.7, duraciones[Math.floor(duraciones.length / 2)] || 0.3);
+  const maxima = Math.max(0.3, mediana * 2);
+  const r = oidas.map((o) => ({ ...o }));
+  for (let i = 0; i < r.length; i++) {
+    const p = r[i], anterior = r[i - 1];
+    // solo después de un silencio de verdad: al inicio o tras una pausa (si Whisper
+    // juntó una frase repetida en una sola palabra larga, recortarla la movería
+    // a la segunda vez que se canta)
+    const empieza = !anterior || p.inicio - anterior.fin > 0.8;
+    if (!empieza || p.fin - p.inicio <= Math.max(1.0, maxima * 1.5)) continue;
+    const siguiente = r[i + 1];
+    if (siguiente && siguiente.fin - siguiente.inicio > maxima) {
+      const corte = Math.max(siguiente.fin / 2, siguiente.fin - maxima);
+      if (corte > p.inicio) { p.fin = corte; siguiente.inicio = corte; }
+    }
+    p.inicio = Math.max(p.inicio, p.fin - maxima);
+  }
+  return r;
+}
+
 const dura = (trozo) => Math.min(0.9, Math.max(0.25, 0.12 + 0.055 * trozo.length));
 function repartir(trozos, desde, hasta) {
   const duraciones = trozos.map(dura), total = duraciones.reduce((a, b) => a + b, 0) || 1;
@@ -224,7 +252,24 @@ const esAlucinacion = (texto) => { const n = normalizar(texto); return !/[a-zñ]
 // cantante, al final de una oración o cuando la siguiente palabra empieza con
 // mayúscula (así escribe Whisper el inicio de un verso). Devuelve la letra con
 // los tiempos de cada línea y de cada palabra.
+// Quita lo que la IA inventa con la música: "Music playing" y la misma palabra
+// repetida en bucle ("oh, oh, oh, oh…": se dejan como mucho 4 seguidas).
+export function limpiarOidas(oidas) {
+  const limpias = [];
+  let repetida = 0;
+  for (let i = 0; i < oidas.length; i++) {
+    const n = normalizar(oidas[i].texto), siguiente = oidas[i + 1] ? normalizar(oidas[i + 1].texto) : "";
+    if (/^(music|musica)$/.test(n) && siguiente === "playing") { i++; continue; }
+    const anterior = limpias.length ? normalizar(limpias[limpias.length - 1].texto) : null;
+    repetida = n && n === anterior ? repetida + 1 : 0;
+    if (repetida >= 4) continue;
+    limpias.push(oidas[i]);
+  }
+  return limpias;
+}
+
 export function letraDesdePalabras(oidas, { pausa = 0.55, maximo = 80 } = {}) {
+  oidas = limpiarOidas(oidas);
   const grupos = [];
   let actual = [];
   const cerrar = () => { if (actual.length) grupos.push(actual); actual = []; };
@@ -268,9 +313,11 @@ export function nombreDesdeArchivo(nombreArchivo) {
 }
 
 // ------------------------------------------------------- en el navegador
+// Medido con las canciones de ejemplo en Chromium: el preciso escribe el 86 %
+// de las palabras; el rápido se pierde con la música (por eso no es el de omisión).
 export const MODELOS = {
-  rapido: { id: "Xenova/whisper-base", nombre: "Rápido", detalle: "≈ 80 MB, menos preciso" },
-  preciso: { id: "Xenova/whisper-small", nombre: "Preciso", detalle: "≈ 250 MB, tarda más" },
+  preciso: { id: "Xenova/whisper-small", nombre: "Preciso", detalle: "≈ 250 MB, recomendado" },
+  rapido: { id: "Xenova/whisper-base", nombre: "Rápido", detalle: "≈ 80 MB, se equivoca más con música" },
 };
 const FRECUENCIA = 16000;
 
@@ -310,20 +357,21 @@ function obtenerTrabajador() {
 
 // Escucha el audio y devuelve las palabras con su tiempo y la duración.
 // alProgreso({ fase: "decodificando" | "descarga" | "escuchando", progreso: 0..100 })
-export async function escuchar(blob, { idioma = "es", modelo = "rapido", alProgreso } = {}) {
+export async function escuchar(blob, { idioma = "es", modelo = "preciso", alProgreso } = {}) {
   alProgreso?.({ fase: "decodificando", progreso: 0 });
   const { muestras, duracion } = await decodificar(blob);
   const id = siguienteId++;
   const oidas = await new Promise((ok, mal) => {
     pendientes.set(id, { ok, mal, alProgreso });
-    obtenerTrabajador().postMessage({ id, modelo: (MODELOS[modelo] || MODELOS.rapido).id, idioma, audio: muestras }, [muestras.buffer]);
+    obtenerTrabajador().postMessage({ id, modelo: (MODELOS[modelo] || MODELOS.preciso).id, idioma, audio: muestras }, [muestras.buffer]);
   });
   return { palabras: oidas, duracion };
 }
 
 // Sincroniza una letra escrita con su pista: { tiempos, palabras }.
 export async function sincronizarLetra(blob, lineas, opciones = {}) {
-  const { palabras: oidas, duracion } = await escuchar(blob, opciones);
+  const { palabras: crudas, duracion } = await escuchar(blob, opciones);
+  const oidas = recortarLargas(crudas);
   if (!oidas.length) throw new Error("La IA no escuchó voz en la pista");
   return { ...tiemposDePalabras(lineas, oidas, duracion), oidas: oidas.length };
 }
@@ -331,7 +379,8 @@ export async function sincronizarLetra(blob, lineas, opciones = {}) {
 // Escribe la letra desde el audio: { lineas, tiempos, palabras }.
 // También devuelve lo oído y la duración, para realinear si se corrige la letra.
 export async function letraDesdeAudio(blob, opciones = {}) {
-  const { palabras: oidas, duracion } = await escuchar(blob, opciones);
+  const { palabras: crudas, duracion } = await escuchar(blob, opciones);
+  const oidas = recortarLargas(crudas);
   const resultado = letraDesdePalabras(oidas);
   if (!resultado.lineas.length) throw new Error("La IA no escuchó letra en la pista");
   return { ...resultado, oidas, duracion };
