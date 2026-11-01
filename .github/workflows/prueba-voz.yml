@@ -116,3 +116,27 @@ jobs:
           key: modelos-voz-v2
       - name: Borrador de la letra con Whisper
         run: python herramientas/borrador_desde_audio.py ${{ matrix.audio }} --modelo ${{ matrix.modelo }} ${{ matrix.aislar }}
+
+  tiempos-ejemplos:
+    runs-on: ubuntu-latest
+    name: Tiempos de las canciones de ejemplo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt faster-whisper
+      - name: Modelos de voz en caché
+        uses: actions/cache@v4
+        with:
+          path: |
+            modelo
+            ~/.cache/huggingface
+          key: modelos-voz-v2
+      - name: Calcular ejemplos/tiempos.json
+        run: python herramientas/tiempos_ejemplos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiempos-ejemplos
+          path: ejemplos/tiempos.json
