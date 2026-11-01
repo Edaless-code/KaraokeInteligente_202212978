@@ -167,6 +167,45 @@ select.campo { appearance: none; background-image: linear-gradient(45deg, transp
 @media (max-width: 520px) { .fila-lista .boton.chico span { display: none; } .fila-lista .boton.chico { padding: 0 11px; } }
 .vacio { padding: 40px 16px; text-align: center; color: var(--texto-3); border: 1px dashed var(--trazo); border-radius: var(--radio); }
 
+/* Barra lateral agrupada como el menú de la consola */
+.nav-grupo { margin: 18px 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-3); }
+
+/* Programa */
+.siguiente-programa { display: flex; align-items: center; gap: 14px; margin: 16px 0 4px; padding: 14px 16px; }
+.siguiente-programa strong { display: block; font-size: 1.05rem; }
+.siguiente-programa > span:nth-child(2) { flex: 1; min-width: 0; }
+.siguiente-programa .icono-modo { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--acento-suave); color: var(--acento-texto); flex: none; }
+.siguiente-programa.grande { flex-wrap: wrap; }
+a.siguiente-programa:hover { border-color: rgba(143,174,224,.28); }
+.agregar-programa { display: flex; gap: 10px; margin: 18px 0 10px; }
+.agregar-programa .boton { flex: none; }
+.pegar-lista { margin-bottom: 8px; }
+.pegar-lista summary { cursor: pointer; color: var(--acento-texto); font-size: .9rem; font-weight: 600; padding: 6px 0; }
+.pegar-lista textarea { min-height: 130px; margin-top: 8px; }
+.lista-programa { list-style: none; padding: 0; }
+.orden { width: 26px; text-align: center; color: var(--texto-3); font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.fila-lista.es-siguiente { border-color: rgba(143,174,224,.45); background: linear-gradient(90deg, var(--acento-suave), var(--superficie) 60%); }
+.fila-lista.cantada strong, .fila-lista.saltada strong { color: var(--texto-3); }
+.fila-lista.cantada strong { text-decoration: line-through; text-decoration-color: var(--texto-3); }
+.estado-cantada { color: var(--exito); }
+.estado-saltada { color: var(--texto-3); }
+.es-siguiente .estado-pendiente { color: var(--acento-texto); font-weight: 700; }
+.boton-icono.chico { width: 36px; height: 36px; color: var(--texto-2); }
+.boton-icono.chico svg { width: 20px; height: 20px; }
+.boton-icono[disabled] { opacity: .3; pointer-events: none; }
+@media (max-width: 520px) { .lista-programa .fila-lista { flex-wrap: wrap; } .lista-programa .fila-lista > div { flex-basis: calc(100% - 40px); } .lista-programa .orden { align-self: flex-start; } }
+
+/* Historial */
+.cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0 8px; }
+.cifras div { display: grid; gap: 2px; padding: 16px 18px; border-radius: var(--radio); background: var(--superficie); border: 1px solid var(--trazo); }
+.cifras strong { font-size: 1.8rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.cifras span { color: var(--texto-2); font-size: .85rem; }
+.ranking { list-style: none; padding: 0; }
+.barra { display: block; height: 6px; margin-top: 6px; border-radius: 3px; background: var(--superficie-alta); overflow: hidden; }
+.barra span { display: block; height: 100%; border-radius: 3px; background: var(--acento-texto); opacity: .8; }
+.hora { width: 48px; flex: none; font-variant-numeric: tabular-nums; font-size: .85rem; }
+.chip.completa { background: rgba(125,191,166,.13); color: var(--exito); }
+
 /* Diálogo (en lugar de prompt / confirm) */
 .dialogo {
   width: min(420px, calc(100% - 32px)); padding: 22px; border: 1px solid var(--material-borde); border-radius: 22px;

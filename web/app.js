@@ -167,6 +167,66 @@ function detectarIdioma(lineas) {
 const existeNombre = (nombre, salvo = null) => todas.some((c) => c.id !== salvo && normalizar(c.nombre).trim() === normalizar(nombre).trim());
 const siguienteCodigo = () => Math.max(0, ...todas.map((x) => x.codigo || 0)) + 1;
 
+// ------------------------------------------------------- programa del cantante
+// Como el archivo PROGRAMA de la consola: las canciones que se van a cantar,
+// en orden. La siguiente pendiente tiene prioridad al reconocer (automático) y
+// el modo manual pasa a ella al terminar una canción.
+const NUMERACION = /^\s*(?:\d+\s*[.)\-:]?|[-•*])\s*/;
+const programa = {
+  leer() {
+    const lista = guardado.leer("programa", []);
+    // las que no estaban en la biblioteca se buscan de nuevo (pudieron agregarse)
+    for (const e of lista) if (!e.id || !porId(e.id)) e.id = this.resolver(e.nombre);
+    return lista;
+  },
+  escribir(lista) { guardado.escribir("programa", lista); },
+  // Nombre exacto (sin tildes ni mayúsculas) o el más parecido, como resolver_nombre.
+  resolver(nombre) {
+    const n = normalizar(nombre).trim();
+    const exacta = canciones.find((c) => normalizar(c.nombre).trim() === n);
+    if (exacta) return exacta.id;
+    let mejor = null, valor = 0;
+    for (const c of canciones) { const v = semejanza(n, normalizar(c.nombre).trim()); if (v > valor) { valor = v; mejor = c; } }
+    return valor >= 0.85 ? mejor.id : null;
+  },
+  agregar(nombres) {
+    const lista = this.leer();
+    for (const crudo of nombres) {
+      const nombre = crudo.replace(NUMERACION, "").trim();
+      if (nombre && !nombre.startsWith("//")) lista.push({ nombre, id: this.resolver(nombre), estado: "pendiente" });
+    }
+    this.escribir(lista);
+  },
+  siguiente() { return this.leer().find((e) => e.estado === "pendiente" && e.id && porId(e.id)) || null; },
+  prioridad() { const s = this.siguiente(); return s ? { [s.id]: 0.12 } : {}; },
+  marcarCantada(id) {
+    const lista = this.leer(), e = lista.find((x) => x.estado === "pendiente" && x.id === id);
+    if (e) { e.estado = "cantada"; this.escribir(lista); }
+  },
+};
+
+// ------------------------------------------------------------------ historial
+// Cada interpretación: canción, modo, inicio y fin, hasta qué línea llegó y si
+// se completó (como la tabla HISTORIAL de la consola).
+const historial = {
+  leer: () => guardado.leer("historial", []),
+  iniciar(cancion, modo) {
+    this.terminar(false);
+    esc.interpretacion = { id: cancion.id, nombre: cancion.nombre, modo, sesion: esc.sesion, inicio: Date.now(), lineas: cancion.lineas.length, hasta: 0 };
+  },
+  avance(linea) { if (esc.interpretacion) esc.interpretacion.hasta = Math.max(esc.interpretacion.hasta, linea); },
+  terminar(completada) {
+    const i = esc.interpretacion;
+    if (!i) return;
+    esc.interpretacion = null;
+    if (!completada && i.hasta < 1 && Date.now() - i.inicio < 8000) return;   // se abrió por error
+    const lista = this.leer();
+    lista.unshift({ ...i, fin: Date.now(), completada });
+    guardado.escribir("historial", lista.slice(0, 500));
+    if (completada) programa.marcarCantada(i.id);
+  },
+};
+
 // ------------------------------------------ editar, borrar y la papelera
 async function eliminarCancion(c) {
   const si = await dialogo({ titulo: `¿Eliminar «${c.nombre}»?`, mensaje: "Pasa a la papelera; desde ahí la puedes recuperar.", aceptar: "Eliminar", peligro: true });
@@ -332,7 +392,7 @@ function lineaEn(tiempos, segundo) {
 
 // --------------------------------------------------------------- búsqueda
 // Encuentra canción y línea a partir de unas palabras (tolera errores de dedo).
-function buscar(texto, limite = 5) {
+function buscar(texto, limite = 5, prioridad = {}) {
   const consulta = palabras(texto);
   if (!consulta.length) return [];
   const resultados = [];
@@ -352,7 +412,7 @@ function buscar(texto, limite = 5) {
       if (puntaje > mejor.puntaje) mejor = { puntaje, linea: fichas[inicio].linea, fin: fichas[Math.min(k, fichas.length) - 1]?.linea ?? 0 };
     }
     const nombre = semejanza(normalizar(texto).trim(), normalizar(c.nombre).trim());
-    const valor = Math.max(mejor.puntaje / consulta.length, nombre);
+    const valor = Math.max(mejor.puntaje / consulta.length, nombre) + (prioridad[c.id] || 0);
     if (valor >= 0.5) resultados.push({ cancion: c, linea: nombre > mejor.puntaje / consulta.length ? 0 : mejor.fin, valor });
   }
   return resultados.sort((a, b) => b.valor - a.valor).slice(0, limite);
@@ -443,12 +503,20 @@ const ICON = {
   importar: `<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2Zm7-3 5-5h-3V4h-4v8H7l5 5Z"/></svg>`,
   exportar: `<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM12 4 7 9h3v6h4V9h3l-5-5Z"/></svg>`,
   recuperar: `<svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Z"/></svg>`,
+  lista: `<svg viewBox="0 0 24 24"><path d="M3 6h12v2H3V6Zm0 5h12v2H3v-2Zm0 5h8v2H3v-2Zm14-3h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3Z"/></svg>`,
+  arriba: `<svg viewBox="0 0 24 24"><path d="m7.4 15.4 4.6-4.6 4.6 4.6L18 14l-6-6-6 6z"/></svg>`,
+  abajo: `<svg viewBox="0 0 24 24"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>`,
+  quitar: `<svg viewBox="0 0 24 24"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z"/></svg>`,
+  saltar: `<svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12Zm10-12v12h2V6h-2Z"/></svg>`,
+  reloj: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
 function abrirEscenario(modo, cancion, linea = 0) {
   cerrarEscenario(true);
-  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", palabras: {}, desfase: +guardado.leer("desfase", 0) || 0 });
+  Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", palabras: {}, oido: [], sesion: Date.now(),
+    desfase: +guardado.leer("desfase", 0) || 0 });
+  if (cancion) historial.iniciar(cancion, modo);
   $("#escenario").hidden = false;
   document.body.style.overflow = "hidden";
   pintarEscenario();
@@ -465,9 +533,10 @@ function cerrarEscenario(silencioso) {
   $("#escenario").classList.remove("quieto");
   clearTimeout(temporizadorIsla);
   document.body.style.overflow = "";
-  if (!silencioso && esc.cancion && esc.modo !== "automatico") {
-    const veces = guardado.leer("veces", {}); veces[esc.cancion.id] = (veces[esc.cancion.id] || 0) + 1; guardado.escribir("veces", veces);
-  }
+  // con pista basta llegar a la última línea; sin pista, pasarla
+  const i = esc.interpretacion;
+  historial.terminar(!!i && i.hasta >= i.lineas - (esc.modo === "pista" ? 1 : 0));
+  if (!silencioso) navegar();   // el programa y el historial cambian al cantar
 }
 
 function pintarLetra(lineas, actual, extra = {}) {
@@ -580,6 +649,8 @@ function actualizarPista() {
     $("#esc-mensaje").textContent = `La letra empieza en ${Math.max(0, Math.ceil(esc.tiempos[0] - ADELANTO - s))} s`;
   } else {
     const linea = r.audio.ended ? c.lineas.length : actual;
+    historial.avance(linea);
+    if (r.audio.ended && esc.interpretacion) historial.terminar(true);
     pintarLetra(c.lineas, linea, { conPalabras: true });
     pintarPalabras(c, linea, s);
     $("#esc-mensaje").textContent = esc.aviso && performance.now() < esc.avisoHasta ? esc.aviso
@@ -614,7 +685,25 @@ function actualizarManual() {
   estado(esc.pausado ? "EN PAUSA" : (esc.linea >= c.lineas.length ? "TERMINÓ" : (esc.modo === "automatico" ? "SIGUIENDO" : "CANTANDO")), esc.pausado ? "pausa" : "");
   const pausa = $("#b-pausa"); if (pausa) pausa.innerHTML = esc.pausado ? `${ICON.play}<span>Seguir</span>` : `${ICON.pausa}<span>Pausa</span>`;
   pintarLetra(c.lineas, esc.linea);
-  if (esc.modo === "manual") $("#esc-mensaje").textContent = esc.pausado ? "En pausa mientras el cantante afina. Toca «Seguir»." : "Toca la letra o presiona C / Enter para avanzar";
+  historial.avance(esc.linea);
+  const termino = esc.linea >= c.lineas.length;
+  if (termino && esc.interpretacion) historial.terminar(true);
+  const siguiente = programa.siguiente();
+  if (termino && esc.modo === "automatico") {
+    // como en la consola: al terminar una canción se espera la siguiente
+    $("#esc-mensaje").textContent = siguiente ? `Terminó. Siguiente en el programa: ${siguiente.nombre}` : "Terminó la canción. Esperando la siguiente…";
+    clearTimeout(esc.esperaSiguiente);
+    esc.esperaSiguiente = setTimeout(() => {
+      if (esc.modo !== "automatico" || esc.cancion !== c) return;
+      esc.cancion = null; esc.linea = 0; esc.oido = [];
+      cambiarIdiomaVoz(idiomaVoz(), false);
+      pintarEscenario();
+    }, 3000);
+  } else if (esc.modo === "manual") {
+    $("#esc-mensaje").textContent = esc.pausado ? "En pausa mientras el cantante afina. Toca «Seguir»."
+      : termino ? (siguiente ? `Terminó. Continuar pasa a la siguiente del programa: ${siguiente.nombre}` : "Terminó la canción. Toca ✕ para elegir otra.")
+      : "Toca la letra o presiona C / Enter para avanzar";
+  }
 }
 function accion(nombre) {
   const r = esc.reproductor;
@@ -633,10 +722,18 @@ function accion(nombre) {
     case "pausa":
       if (esc.modo === "pista") { if (r) (r.pausado ? r.reproducir() : r.pausar()); return; }
       esc.pausado = !esc.pausado; break;
-    case "continuar": if (!esc.pausado && esc.cancion) esc.linea = Math.min(esc.cancion.lineas.length, esc.linea + 1); break;
+    case "continuar": {
+      if (esc.pausado || !esc.cancion) break;
+      if (esc.linea >= esc.cancion.lineas.length && esc.modo === "manual") {
+        const siguiente = programa.siguiente();
+        if (siguiente) { abrirEscenario("manual", porId(siguiente.id)); return; }
+      }
+      esc.linea = Math.min(esc.cancion.lineas.length, esc.linea + 1);
+      break;
+    }
     case "atras": esc.linea = Math.max(0, esc.linea - 1); break;
     case "igual": break;
-    case "repetir": esc.linea = 0; break;
+    case "repetir": esc.linea = 0; if (esc.cancion && !esc.interpretacion) historial.iniciar(esc.cancion, esc.modo); break;
   }
   if (esc.modo !== "pista") actualizarManual();
 }
@@ -649,18 +746,18 @@ function iniciarAutomatico() {
   if (!Rec) { $("#esc-mensaje").textContent = "Este navegador no tiene reconocimiento de voz. Use Chrome o Edge."; return; }
   const rec = new Rec();
   rec.continuous = true; rec.interimResults = true; rec.lang = VOZ_NAVEGADOR[idiomaVoz()];
-  let oido = [];
   rec.onresult = (ev) => {
     let texto = "";
     for (let i = ev.resultIndex; i < ev.results.length; i++) texto += ev.results[i][0].transcript + " ";
     const nuevas = palabras(texto);
     if (!nuevas.length || esc.pausado) return;
-    oido = [...oido, ...nuevas].slice(-14);
+    const oido = esc.oido = [...esc.oido, ...nuevas].slice(-14);
     $("#esc-mensaje").textContent = "Escuchado: " + texto.trim().slice(-80);
     if (!esc.cancion) {
-      const [mejor] = buscar(oido.join(" "), 1);
+      const [mejor] = buscar(oido.join(" "), 1, programa.prioridad());
       if (mejor && mejor.valor >= 0.7 && oido.length >= 4) {
         esc.cancion = mejor.cancion; esc.linea = mejor.linea;
+        historial.iniciar(mejor.cancion, "automatico");
         avisar(`Canción identificada: ${mejor.cancion.nombre}`);
         if (entrarConPista(mejor.cancion, mejor.linea)) return;
         cambiarIdiomaVoz(mejor.cancion.idioma === "en" ? "en" : "es", false);
@@ -808,6 +905,12 @@ const vistas = {
           <div class="acciones"><button class="boton" data-cantar="${destacada.id}">${ICON.play} Reproducir con letra</button></div>
         </div>
       </section>` : ""}
+      ${(() => { const s = programa.siguiente(), c = s && porId(s.id); return c ? `
+      <a class="tarjeta siguiente-programa" href="#programa">
+        <span class="icono-modo">${ICON.lista}</span>
+        <span><span class="antetitulo">Sigue en tu programa</span><strong>${escapar(c.nombre)}</strong></span>
+        <span class="tenue">Ver programa</span>
+      </a>` : ""; })()}
       <h2>Elige cómo seguir la letra</h2>
       <div class="modos">
         <a class="tarjeta modo" href="#manual"><span class="icono-modo">${ICON.siguiente}</span><span><strong>Modo manual</strong><span class="nota">Escribe 2 o 3 palabras que escuches y avanza con un toque.</span></span></a>
@@ -864,6 +967,7 @@ const vistas = {
             ${c.audio ? `<button class="boton" data-cantar="${c.id}">${ICON.play} Reproducir con letra</button>` : ""}
             <button class="boton ${c.audio ? "secundario" : ""}" data-manual="${c.id}">${ICON.siguiente} ${c.audio ? "Cantar sin pista" : "Cantar"}</button>
             <button class="boton-icono" data-favorita="${c.id}" aria-label="Favorita" title="Favorita" style="color:${c.favorita ? "var(--acento-texto)" : "var(--texto-2)"}">${corazon(c.favorita)}</button>
+            <button class="boton-icono" data-al-programa="${c.id}" aria-label="Agregar al programa" title="Agregar al programa del cantante">${ICON.lista}</button>
             <a class="boton-icono" href="#editar?id=${c.id}" aria-label="Editar" title="Corregir la letra o el nombre">${ICON.editar}</a>
             <button class="boton-icono" data-eliminar="${c.id}" aria-label="Eliminar" title="Eliminar (se puede recuperar)">${ICON.basura}</button>
           </div>
@@ -950,6 +1054,118 @@ const vistas = {
     activarFormulario(c);
   },
 
+  programa() {
+    const lista = programa.leer(), siguiente = programa.siguiente();
+    const sig = siguiente && porId(siguiente.id);
+    const estados = { pendiente: "Pendiente", cantada: "Cantada", saltada: "Saltada" };
+    contenido.innerHTML = `
+      <div class="encabezado-vista">
+        <div><p class="antetitulo">Sesión</p><h1>Programa del cantante</h1></div>
+        ${lista.length ? `<div class="acciones-vista">
+          <button class="boton secundario chico" data-programa-reiniciar>${ICON.recuperar}<span>Reiniciar avance</span></button>
+          <button class="boton fantasma chico" data-programa-vaciar>${ICON.basura}<span>Vaciar</span></button></div>` : ""}
+      </div>
+      <p class="nota">Las canciones que se van a cantar, en orden. En el modo automático la siguiente tiene prioridad al reconocer, y en el manual se pasa a ella al terminar la anterior.</p>
+      ${sig ? `<section class="tarjeta siguiente-programa grande">
+        <span class="icono-modo">${ICON.play}</span>
+        <span><span class="antetitulo">Sigue</span><strong>${escapar(sig.nombre)}</strong></span>
+        <span class="acciones" style="margin:0">
+          ${sig.audio ? `<button class="boton chico" data-cantar="${sig.id}">${ICON.play}<span>Con pista</span></button>` : ""}
+          <button class="boton ${sig.audio ? "secundario" : ""} chico" data-manual="${sig.id}">${ICON.siguiente}<span>${sig.audio ? "Sin pista" : "Cantar"}</span></button>
+        </span>
+      </section>` : ""}
+      <form class="agregar-programa" id="form-programa">
+        <input class="campo" name="nombre" list="nombres-canciones" placeholder="Nombre de la canción" autocomplete="off" maxlength="150">
+        <datalist id="nombres-canciones">${canciones.map((c) => `<option value="${escapar(c.nombre)}">`).join("")}</datalist>
+        <button class="boton" type="submit">${ICON.lista} Agregar</button>
+      </form>
+      <details class="pegar-lista">
+        <summary>Pegar una lista o cargar el archivo PROGRAMA</summary>
+        <textarea class="campo" id="lista-programa" rows="6" placeholder="Una canción por renglón; se aceptan números como «1. Sound of You»"></textarea>
+        <div class="acciones">
+          <button class="boton secundario chico" data-programa-pegar>${ICON.lista}<span>Agregar la lista</span></button>
+          <label class="boton secundario chico">${ICON.importar}<span>Cargar PROGRAMA.txt</span><input type="file" id="archivo-programa" accept=".txt,text/plain" hidden></label>
+        </div>
+      </details>
+      ${lista.length ? `<ol class="lista lista-programa">${lista.map((e, i) => {
+        const c = e.id && porId(e.id);
+        return `<li class="fila-lista ${e.estado} ${siguiente === e ? "es-siguiente" : ""}">
+          <span class="orden">${i + 1}</span>
+          <div><strong>${escapar(c ? c.nombre : e.nombre)}</strong>
+            <span class="nota">${c ? `Código ${c.codigo}` : "No está en la biblioteca"} · <span class="estado-${e.estado}">${siguiente === e ? "Sigue" : estados[e.estado]}</span></span></div>
+          <button class="boton-icono chico" data-programa-mover="${i}" data-dir="-1" aria-label="Subir" ${i === 0 ? "disabled" : ""}>${ICON.arriba}</button>
+          <button class="boton-icono chico" data-programa-mover="${i}" data-dir="1" aria-label="Bajar" ${i === lista.length - 1 ? "disabled" : ""}>${ICON.abajo}</button>
+          <button class="boton-icono chico" data-programa-estado="${i}" aria-label="${e.estado === "pendiente" ? "Saltar" : "Volver a pendiente"}" title="${e.estado === "pendiente" ? "Saltar" : "Volver a pendiente"}">${e.estado === "pendiente" ? ICON.saltar : ICON.recuperar}</button>
+          <button class="boton-icono chico" data-programa-quitar="${i}" aria-label="Quitar del programa">${ICON.quitar}</button>
+        </li>`; }).join("")}</ol>`
+        : `<p class="vacio">El programa está vacío. Agrega canciones con el nombre, pega una lista o usa el botón de la lista en cada canción.</p>`}`;
+    $("#form-programa").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const nombre = new FormData(e.target).get("nombre").trim();
+      if (!nombre) return;
+      programa.agregar([nombre]); navegar();
+      avisar(programa.resolver(nombre) ? `«${nombre}» agregada al programa` : `«${nombre}» agregada (aún no está en la biblioteca)`);
+    });
+    $("#archivo-programa").addEventListener("change", async (e) => {
+      const f = e.target.files[0]; if (!f || f.size > 512 * 1024) return;
+      programa.agregar((await f.text()).split(/\r?\n/).filter((r) => r.trim() && !r.trim().startsWith("#")));
+      navegar(); avisar("Programa cargado");
+    });
+  },
+
+  historial() {
+    const lista = historial.leer();
+    const completas = lista.filter((h) => h.completada).length;
+    const conteo = {};
+    for (const h of lista) { const k = h.id; conteo[k] = conteo[k] || { nombre: h.nombre, veces: 0, completas: 0 }; conteo[k].veces++; if (h.completada) conteo[k].completas++; }
+    const top = Object.entries(conteo).sort((a, b) => b[1].veces - a[1].veces).slice(0, 10);
+    const maximo = top[0]?.[1].veces || 1;
+    const modos = { manual: "Manual", automatico: "Automático", pista: "Con pista" };
+    const porDia = {};
+    for (const h of lista.slice(0, 60)) (porDia[new Date(h.inicio).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" })] ||= []).push(h);
+    contenido.innerHTML = `
+      <div class="encabezado-vista">
+        <div><p class="antetitulo">Sesión</p><h1>Historial</h1></div>
+        ${lista.length ? `<div class="acciones-vista"><button class="boton fantasma chico" data-historial-borrar>${ICON.basura}<span>Borrar historial</span></button></div>` : ""}
+      </div>
+      ${lista.length ? `
+      <div class="cifras">
+        <div><strong>${lista.length}</strong><span>interpretaciones</span></div>
+        <div><strong>${completas}</strong><span>completas (${Math.round(completas * 100 / lista.length)} %)</span></div>
+        <div><strong>${Object.keys(conteo).length}</strong><span>canciones distintas</span></div>
+      </div>
+      <h2>Más cantadas</h2>
+      <ol class="lista ranking">${top.map(([id, d], i) => `
+        <li class="fila-lista"><span class="orden">${i + 1}</span>
+          <div><strong>${escapar(d.nombre)}</strong><span class="barra"><span style="width:${(d.veces / maximo) * 100}%"></span></span></div>
+          <span class="tenue">${d.veces} ${d.veces === 1 ? "vez" : "veces"}</span></li>`).join("")}</ol>
+      <h2>Últimas interpretaciones</h2>
+      ${Object.entries(porDia).map(([dia, hs]) => `
+        <p class="grupo-lineas">${escapar(dia.toUpperCase())}</p>
+        <div class="lista">${hs.map((h) => `
+          <div class="fila-lista">
+            <span class="tenue hora">${new Date(h.inicio).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</span>
+            <div><strong>${escapar(h.nombre)}</strong><span class="nota">${modos[h.modo] || h.modo} · llegó a la línea ${Math.min(h.hasta + 1, h.lineas)} de ${h.lineas}</span></div>
+            <span class="chip ${h.completada ? "completa" : ""}">${h.completada ? "Completa" : "Incompleta"}</span>
+          </div>`).join("")}</div>`).join("")}`
+      : `<p class="vacio">Todavía no hay interpretaciones. Lo que se cante en cualquier modo aparecerá aquí.</p>`}`;
+  },
+
+  mas() {
+    const enlaces = [
+      ["#programa", ICON.lista, "Programa del cantante", "Las canciones de esta noche, en orden"],
+      ["#historial", ICON.reloj, "Historial", "Canciones cantadas y estadísticas"],
+      ["#agregar", ICON.importar, "Agregar canciones", "Escribir, pegar o importar un .txt"],
+      ["#papelera", ICON.basura, `Papelera${papelera.length ? ` (${papelera.length})` : ""}`, "Recuperar canciones eliminadas"],
+    ];
+    contenido.innerHTML = `
+      <p class="antetitulo">Karaoke inteligente</p>
+      <h1>Más</h1>
+      <div class="modos">${enlaces.map(([href, icono, titulo, nota]) => `
+        <a class="tarjeta modo" href="${href}"><span class="icono-modo">${icono}</span><span><strong>${titulo}</strong><span class="nota">${nota}</span></span></a>`).join("")}</div>
+      <p class="nota tenue" style="margin-top:28px">Edgar Alessandro Chocon Oliva · Carné 202212978</p>`;
+  },
+
   papelera() {
     contenido.innerHTML = `
       <div class="encabezado-vista">
@@ -1027,7 +1243,8 @@ async function navegar() {
   const [ruta, consulta] = (location.hash.slice(1) || "inicio").split("?");
   const parametros = new URLSearchParams(consulta || "");
   const vista = vistas[ruta] || vistas.inicio;
-  document.querySelectorAll("[data-ruta]").forEach((a) => a.classList.toggle("activa", a.dataset.ruta === (["cancion", "editar", "papelera"].includes(ruta) ? "biblioteca" : ruta)));
+  document.querySelectorAll("[data-ruta]").forEach((a) => a.classList.toggle("activa",
+    a.dataset.ruta === ruta || (a.dataset.grupo || "").split(" ").includes(ruta)));
   await vista(parametros);
   contenido.focus({ preventScroll: true });
   window.scrollTo(0, 0);
@@ -1056,6 +1273,28 @@ contenido.addEventListener("click", async (e) => {
       await cargarCanciones(); navegar(); avisar("Papelera vacía");
     }
   } else if (t("[data-exportar]")) exportarBiblioteca();
+  else if (t("[data-al-programa]")) {
+    const c = porId(t("[data-al-programa]").dataset.alPrograma);
+    programa.agregar([c.nombre]);
+    avisar(`«${c.nombre}» agregada al programa`, { texto: "Ver", accion: () => { location.hash = "programa"; } });
+  } else if (t("[data-programa-mover]")) {
+    const b = t("[data-programa-mover]"), lista = programa.leer(), i = +b.dataset.programaMover, j = i + +b.dataset.dir;
+    if (j >= 0 && j < lista.length) { [lista[i], lista[j]] = [lista[j], lista[i]]; programa.escribir(lista); navegar(); }
+  } else if (t("[data-programa-estado]")) {
+    const lista = programa.leer(), e = lista[+t("[data-programa-estado]").dataset.programaEstado];
+    e.estado = e.estado === "pendiente" ? "saltada" : "pendiente"; programa.escribir(lista); navegar();
+  } else if (t("[data-programa-quitar]")) {
+    const lista = programa.leer(); lista.splice(+t("[data-programa-quitar]").dataset.programaQuitar, 1); programa.escribir(lista); navegar();
+  } else if (t("[data-programa-pegar]")) {
+    const texto = $("#lista-programa").value;
+    if (texto.trim()) { programa.agregar(texto.split(/\r?\n/)); navegar(); avisar("Lista agregada al programa"); }
+  } else if (t("[data-programa-reiniciar]")) {
+    programa.escribir(programa.leer().map((e) => ({ ...e, estado: "pendiente" }))); navegar();
+  } else if (t("[data-programa-vaciar]")) {
+    if (await dialogo({ titulo: "¿Vaciar el programa?", aceptar: "Vaciar", peligro: true })) { programa.escribir([]); navegar(); }
+  } else if (t("[data-historial-borrar]")) {
+    if (await dialogo({ titulo: "¿Borrar el historial?", mensaje: "Se borran todas las interpretaciones y estadísticas.", aceptar: "Borrar", peligro: true })) { guardado.escribir("historial", []); navegar(); }
+  }
   else if (t("[data-genero]")) {
     const c = porId(t("[data-genero]").dataset.genero);
     const generos = [...new Set(canciones.map((x) => x.genero).filter(Boolean))].sort();
