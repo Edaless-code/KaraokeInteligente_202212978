@@ -63,6 +63,31 @@ def test_los_ejemplos_quedan_vinculados(tmp_path):
     importar_archivo(bd, raiz / "ejemplos" / "canciones.txt", config)
     ReproducirConLetra(Aplicacion(config, bd, teclado=object())).vincular_ejemplos()
     assert [(n, a) for _, n, a in bd.listar_pistas()] == [("Ghost of you", "ejemplos/Ghost_of_you_Remastered.mp3")]
+    assert bd.obtener_tiempos(bd.listar_pistas()[0][0]) is None  # sin tiempos.json no inventa tiempos
+    bd.cerrar()
+
+
+def test_los_ejemplos_traen_sus_tiempos(tmp_path):
+    import shutil
+    from pathlib import Path
+
+    from karaoke.config import cargar_config
+    from karaoke.db import BaseDatos
+    from karaoke.importador import importar_archivo
+    from karaoke.pistas import vincular_ejemplos
+
+    raiz = Path(__file__).resolve().parent.parent
+    (tmp_path / "ejemplos").mkdir()
+    for nombre in ("Ghost_of_you_Remastered.mp3", "tiempos.json"):
+        shutil.copy(raiz / "ejemplos" / nombre, tmp_path / "ejemplos")
+    config = cargar_config(tmp_path)
+    bd = BaseDatos(config.ruta_bd)
+    importar_archivo(bd, raiz / "ejemplos" / "canciones.txt", config)
+    vincular_ejemplos(bd, config)
+    codigo = bd.listar_pistas()[0][0]
+    tiempos = bd.obtener_tiempos(codigo)
+    assert tiempos and len(tiempos) == len(bd.obtener_cancion(codigo).lineas)
+    assert tiempos == sorted(tiempos)
     bd.cerrar()
 
 

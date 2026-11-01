@@ -27,4 +27,29 @@ def vincular_ejemplos(bd: BaseDatos, config: Config) -> int:
             bd.guardar_pista(encontradas[0][0], ruta.relative_to(config.carpeta).as_posix())
             con_pista.add(encontradas[0][0])
             nuevas += 1
+    _tiempos_de_ejemplo(bd, carpeta)
     return nuevas
+
+
+def _tiempos_de_ejemplo(bd: BaseDatos, carpeta) -> None:
+    """Carga ``ejemplos/tiempos.json`` (tiempos ya calculados de las canciones
+    de ejemplo) para que suenen a tiempo desde la primera vez, sin esperar a la
+    IA. Solo se usan si la letra tiene el mismo número de líneas."""
+    import json
+
+    ruta = carpeta / "tiempos.json"
+    if not ruta.is_file():
+        return
+    try:
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    for codigo, _, archivo in bd.listar_pistas():
+        if bd.obtener_tiempos(codigo):
+            continue
+        for info in datos.values():
+            if archivo.endswith("/" + info.get("archivo", "\0")):
+                cancion = bd.obtener_cancion(codigo)
+                tiempos = info.get("tiempos") or []
+                if cancion and len(cancion.lineas) == len(tiempos):
+                    bd.guardar_tiempos(codigo, [float(t) for t in tiempos])
