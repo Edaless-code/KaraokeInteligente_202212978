@@ -5,6 +5,7 @@
 // del navegador) y una IA (Whisper, en ia.js) que sincroniza la letra con la
 // pista o la escribe a partir del audio.
 import * as ia from "./ia.js";
+import * as afinacion from "./afinacion.js";
 
 const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
 const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
@@ -559,13 +560,14 @@ const ICON = {
   saltar: `<svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6v12Zm10-12v12h2V6h-2Z"/></svg>`,
   reloj: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></svg>`,
   ia: `<svg viewBox="0 0 24 24"><path d="M9.5 2 11 6.5 15.5 8 11 9.5 9.5 14 8 9.5 3.5 8 8 6.5 9.5 2Zm8 9 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM6 15l.8 2.2L9 18l-2.2.8L6 21l-.8-2.2L3 18l2.2-.8L6 15Z"/></svg>`,
+  estrella: `<svg viewBox="0 0 24 24"><path d="M12 17.3 18.2 21l-1.6-7L22 9.2l-7.2-.6L12 2 9.2 8.6 2 9.2 7.4 14l-1.6 7z"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
-function abrirEscenario(modo, cancion, linea = 0) {
+function abrirEscenario(modo, cancion, linea = 0, { calificar = false } = {}) {
   cerrarEscenario(true);
   Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", estadoIA: "", palabras: {}, oido: [], sesion: Date.now(),
-    desfase: +guardado.leer("desfase", 0) || 0 });
+    desfase: +guardado.leer("desfase", 0) || 0, calificar, calificador: null, resultadoMostrado: false });
   if (cancion) historial.iniciar(cancion, modo);
   $("#escenario").hidden = false;
   document.body.style.overflow = "hidden";
@@ -576,6 +578,14 @@ function abrirEscenario(modo, cancion, linea = 0) {
 }
 function cerrarEscenario(silencioso) {
   cancelAnimationFrame(esc.raf);
+  // si se sale a media canción ya calificada en buena parte, el puntaje se guarda igual
+  if (esc.calificador && !esc.resultadoMostrado && esc.calificador.avance >= 0.3 && esc.cancion) {
+    const r = guardarPuntaje(esc.cancion, esc.calificador.resultado());
+    avisar(`Tu puntaje: ${r.puntaje} · ${"★".repeat(r.estrellas)}${"☆".repeat(5 - r.estrellas)}`);
+  }
+  esc.microfono?.detener(); esc.microfono = null; esc.calificador = null;
+  $("#resultado-canto")?.remove();
+  $("#esc-puntos").hidden = true;
   esc.reproductor?.detener(); esc.reproductor = null;
   try { esc.reconocedor?.stop(); } catch { /* ya detenido */ }
   esc.reconocedor = null; esc.sincronizando = null;
@@ -678,6 +688,7 @@ async function iniciarPista(desde = 0, voz = 1, entrada = null) {
   try { await r.reproducir(); } catch { estado("EN PAUSA", "pausa"); avisar("Toca «Reproducir» para empezar"); }
   const bucle = () => { actualizarPista(); esc.raf = requestAnimationFrame(bucle); };
   bucle();
+  if (esc.calificar) empezarCalificacion(c, r);
   // Sin tiempos exactos, la IA escucha la pista mientras suena y, al terminar,
   // la letra se pasa sola a ir junto con la voz (y queda guardado).
   if (!c.tiempos) sincronizarEnEscenario(c, r);
@@ -688,6 +699,7 @@ async function sincronizarEnEscenario(c, r) {
     const nueva = await sincronizarConIA(c, (texto) => { if (esc.reproductor === r) esc.estadoIA = texto; });
     if (esc.reproductor !== r || !nueva) return;
     esc.cancion = nueva; esc.tiempos = nueva.tiempos; esc.palabras = {}; esc.estadoIA = "";
+    if (esc.calificador && esc.vozPista) esc.calificador = nuevoCalificador(nueva, esc.vozPista);
     delete $("#l-actual").dataset.palabras;
     esc.aviso = "Listo: la IA sincronizó la letra con la voz"; esc.avisoHasta = performance.now() + 4000;
   } catch (e) {
@@ -701,6 +713,7 @@ function actualizarPista() {
   const r = esc.reproductor, c = esc.cancion;
   if (!r) return;
   const duracion = r.duracion, reloj_ = r.segundo, s = reloj_ + esc.desfase;   // desfase: [ y ] afinan la letra
+  if (esc.calificador && esc.microfono && !r.pausado) escucharCantante(s);
   if (!esc.tiempos && duracion) esc.tiempos = c.tiempos || tiemposAproximados(c.lineas, duracion);
   $("#esc-sub").textContent = `${reloj(reloj_)} / ${reloj(duracion)}`;
   $("#t-actual").textContent = reloj(reloj_); $("#t-total").textContent = reloj(duracion);
@@ -722,7 +735,8 @@ function actualizarPista() {
     return;
   }
   const actual = lineaEn(esc.tiempos, s);
-  if (r.pausado) estado("EN PAUSA", "pausa");
+  if (r.audio.ended) estado("TERMINÓ");
+  else if (r.pausado) estado("EN PAUSA", "pausa");
   else if (actual < 0) estado("INTRO", "intro");
   else estado("SONANDO");
   if (actual < 0) {
@@ -732,6 +746,7 @@ function actualizarPista() {
   } else {
     const linea = r.audio.ended ? c.lineas.length : actual;
     historial.avance(linea);
+    if (r.audio.ended && esc.calificador && !esc.resultadoMostrado) mostrarResultado(c);
     if (r.audio.ended && esc.interpretacion) historial.terminar(true);
     pintarLetra(c.lineas, linea, { conPalabras: true });
     pintarPalabras(c, linea, s);
@@ -739,6 +754,91 @@ function actualizarPista() {
       : esc.estadoIA || (c.tiempos ? "" : "Tiempos aproximados · toca «Afinar» para marcarlos a tu ritmo");
   }
 }
+// ------------------------------------------------- puntuación al cantar
+// El micrófono escucha a quien canta y se compara, palabra por palabra, su nota
+// con la de la voz original y si canta cuando toca (afinacion.js).
+function nuevoCalificador(c, voz) {
+  const palabrasLinea = c.lineas.map((_, i) => tiemposDePalabras(c, i));
+  return new afinacion.Calificador(palabrasLinea, (a, b) => afinacion.notaDeReferencia(voz.senal, voz.frecuencia, a, b));
+}
+async function empezarCalificacion(c, r) {
+  const puntos = $("#esc-puntos");
+  puntos.hidden = false; puntos.textContent = "Calificando…";
+  // la voz del artista al 25 %: así el micrófono te escucha a ti y no a él
+  r.ajustarVoz(0.25);
+  document.querySelectorAll("[data-voz]").forEach((x) => x.classList.toggle("activo", +x.dataset.voz === 0.25));
+  esc.aviso = "Te estoy calificando: canta cerca del micrófono (con audífonos, mejor)";
+  esc.avisoHasta = performance.now() + 7000;
+  try {
+    const microfono = new afinacion.Microfono();
+    await microfono.iniciar();
+    if (esc.reproductor !== r) { microfono.detener(); return; }
+    const voz = await afinacion.senalDeVoz(await blobDeAudio(c));
+    if (esc.reproductor !== r) { microfono.detener(); return; }
+    Object.assign(esc, { microfono, vozPista: voz, calificador: nuevoCalificador(esc.cancion, voz) });
+    puntos.textContent = "♪ —";
+  } catch (e) {
+    puntos.hidden = true;
+    esc.aviso = `No se pudo usar el micrófono para calificarte (${e.message || e.name}). La canción sigue sin puntaje.`;
+    esc.avisoHasta = performance.now() + 8000;
+  }
+}
+function escucharCantante(segundo) {
+  const ahora = performance.now();
+  if (ahora - (esc.ultimoCuadro || 0) < 40) return;   // unas 25 lecturas por segundo
+  esc.ultimoCuadro = ahora;
+  const { voz, nota, nivel } = esc.microfono.leer();
+  esc.calificador.registrar(segundo, voz, nota);
+  const puntos = $("#esc-puntos");
+  puntos.style.setProperty("--nivel", Math.min(1, nivel * 8).toFixed(2));
+  if (ahora - (esc.ultimoPuntaje || 0) > 500 && esc.calificador.avance > 0) {
+    esc.ultimoPuntaje = ahora;
+    puntos.textContent = `♪ ${esc.calificador.resultado().puntaje}`;
+  }
+}
+function guardarPuntaje(c, r) {
+  if (esc.interpretacion) esc.interpretacion.puntaje = r.puntaje;
+  const anterior = porId(c.id)?.mejorPuntaje ?? null;
+  r.anterior = anterior;
+  r.record = anterior === null || r.puntaje > anterior;
+  if (r.record) { guardarExtra(c.id, { mejorPuntaje: r.puntaje }); const x = porId(c.id); if (x) x.mejorPuntaje = r.puntaje; }
+  return r;
+}
+const iconoEstrella = (llena) => `<svg viewBox="0 0 24 24" class="${llena ? "llena" : ""}"><path d="M12 17.3 18.2 21l-1.6-7L22 9.2l-7.2-.6L12 2 9.2 8.6 2 9.2 7.4 14l-1.6 7z"/></svg>`;
+function mostrarResultado(c) {
+  esc.resultadoMostrado = true;
+  const r = guardarPuntaje(c, esc.calificador.resultado());
+  esc.microfono?.detener(); esc.microfono = null;
+  const barra = (nombre, valor) => valor === null ? "" : `
+    <div class="barra-resultado"><span>${nombre}</span><span class="barra"><span style="width:${Math.round(valor * 100)}%"></span></span><strong>${Math.round(valor * 100)} %</strong></div>`;
+  const caja = document.createElement("div");
+  caja.id = "resultado-canto";
+  caja.className = "resultado-canto";
+  caja.setAttribute("role", "dialog");
+  caja.setAttribute("aria-label", "Tu puntaje");
+  caja.innerHTML = `
+    <p class="antetitulo">Tu puntaje · ${escapar(c.nombre)}</p>
+    <strong class="cifra" data-meta="${r.puntaje}">0</strong>
+    <div class="estrellas" aria-label="${r.estrellas} de 5 estrellas">${[1, 2, 3, 4, 5].map((n) => iconoEstrella(n <= r.estrellas)).join("")}</div>
+    ${barra("Afinación", r.afinacion)}${barra("A tiempo", r.tiempo)}
+    <p class="nota">${r.record ? (r.anterior === null ? "Tu primer puntaje en esta canción" : `¡Nuevo récord! Antes: ${r.anterior}`) : `Tu mejor puntaje: ${r.anterior}`}${r.afinacion === null ? " · la música no dejó oír bien la voz original: se calificó el tiempo" : ""}</p>
+    <div class="acciones">
+      <button class="boton" data-accion="otra-vez">Otra vez</button>
+      <button class="boton secundario" data-accion="cerrar">Cerrar</button>
+    </div>`;
+  $("#escenario").append(caja);
+  // la cifra sube hasta el puntaje (sin animación si se pidió menos movimiento)
+  const cifra = caja.querySelector(".cifra"), meta = r.puntaje, inicio = performance.now();
+  const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const subir = () => {
+    const t = reducido ? 1 : Math.min(1, (performance.now() - inicio) / 900);
+    cifra.textContent = Math.round(meta * (1 - Math.pow(1 - t, 3)));
+    if (t < 1) requestAnimationFrame(subir);
+  };
+  subir();
+  caja.querySelector('[data-accion="otra-vez"]').focus();
+}
+
 // "Afinar": la canción vuelve al inicio y cada toque marca el inicio de una línea.
 function empezarSincronizacion() {
   esc.sincronizando = { marcas: [] };
@@ -791,6 +891,7 @@ function accion(nombre) {
   const r = esc.reproductor;
   switch (nombre) {
     case "cerrar": cerrarEscenario(); return;
+    case "otra-vez": { const c = esc.cancion; cerrarEscenario(true); abrirEscenario("pista", c, 0, { calificar: true }); return; }
     case "menos5": r?.mover(-5); return;
     case "mas5": r?.mover(5); return;
     case "inicio": r?.ir(0); return;
@@ -883,7 +984,7 @@ function entrarConPista(cancion, linea) {
   if (cancion.tiempos && cancion.tiempos.length !== cancion.lineas.length) cancion.tiempos = null;
   const rec = esc.reconocedor; esc.reconocedor = null;
   try { rec?.stop(); } catch { /* ya detenido */ }
-  Object.assign(esc, { modo: "pista", tiempos: null, pausado: false });
+  Object.assign(esc, { modo: "pista", tiempos: null, pausado: false, calificar: true });
   pintarEscenario();
   // sin tiempos exactos entra con los aproximados y la IA los afina mientras suena
   iniciarPista(0, VOZ_AL_RECONOCER, { linea, fraccion: 0.6 });
@@ -1044,6 +1145,7 @@ const vistas = {
           <div class="filtros">
             <span class="chip">${c.lineas.length} líneas</span>
             <span class="chip">${c.idioma === "en" ? "Inglés" : "Español"}</span>
+            ${c.mejorPuntaje != null ? `<span class="chip puntaje">${ICON.estrella} Mejor puntaje: ${c.mejorPuntaje}</span>` : ""}
             <button class="chip" data-genero="${c.id}">Género: ${escapar(c.genero || "ninguno")}</button>
             <button class="chip" data-portada="${c.id}">${c.portada ? "Cambiar portada" : "Agregar portada"}</button>
           </div>
@@ -1053,7 +1155,8 @@ const vistas = {
             ${sincronizando.has(c.id) ? "" : `<button class="boton fantasma chico" data-sincronizar="${c.id}">${c.tiempos ? "Volver a sincronizar" : "Sincronizar ahora"}</button>`}
           </div>` : ""}
           <div class="acciones">
-            ${c.audio ? `<button class="boton" data-cantar="${c.id}">${ICON.play} Reproducir con letra</button>` : ""}
+            ${c.audio ? `<button class="boton" data-cantar="${c.id}">${ICON.play} Reproducir con letra</button>
+            <button class="boton secundario" data-calificar="${c.id}">${ICON.estrella} Cantar y calificarme</button>` : ""}
             <button class="boton ${c.audio ? "secundario" : ""}" data-manual="${c.id}">${ICON.siguiente} ${c.audio ? "Cantar sin pista" : "Cantar"}</button>
             <button class="boton-icono" data-favorita="${c.id}" aria-label="Favorita" title="Favorita" style="color:${c.favorita ? "var(--acento-texto)" : "var(--texto-2)"}">${corazon(c.favorita)}</button>
             <button class="boton-icono" data-al-programa="${c.id}" aria-label="Agregar al programa" title="Agregar al programa del cantante">${ICON.lista}</button>
@@ -1240,6 +1343,7 @@ const vistas = {
           <div class="fila-lista">
             <span class="tenue hora">${new Date(h.inicio).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</span>
             <div><strong>${escapar(h.nombre)}</strong><span class="nota">${modos[h.modo] || h.modo} · llegó a la línea ${Math.min(h.hasta + 1, h.lineas)} de ${h.lineas}</span></div>
+            ${h.puntaje != null ? `<span class="chip puntaje">${h.puntaje} pts</span>` : ""}
             <span class="chip ${h.completada ? "completa" : ""}">${h.completada ? "Completa" : "Incompleta"}</span>
           </div>`).join("")}</div>`).join("")}`
       : `<p class="vacio">Todavía no hay interpretaciones. Lo que se cante en cualquier modo aparecerá aquí.</p>`}`;
@@ -1436,6 +1540,7 @@ window.addEventListener("hashchange", navegar);
 contenido.addEventListener("click", async (e) => {
   const t = (s) => e.target.closest(s);
   if (t("[data-cantar]")) abrirEscenario("pista", porId(t("[data-cantar]").dataset.cantar));
+  else if (t("[data-calificar]")) abrirEscenario("pista", porId(t("[data-calificar]").dataset.calificar), 0, { calificar: true });
   else if (t("[data-manual]")) { const b = t("[data-manual]"); abrirEscenario("manual", porId(b.dataset.manual), +(b.dataset.linea || 0)); }
   else if (t("[data-ver]")) location.hash = `cancion?id=${t("[data-ver]").dataset.ver}`;
   else if (t("[data-filtro]") !== null && t("[data-filtro]")) location.hash = `biblioteca?filtro=${encodeURIComponent(t("[data-filtro]").dataset.filtro)}`;

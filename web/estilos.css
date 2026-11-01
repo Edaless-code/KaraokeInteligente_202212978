@@ -186,6 +186,30 @@ select.campo { appearance: none; background-image: linear-gradient(45deg, transp
 .niveles.formas a.activo { background: var(--superficie-alta); color: var(--texto); }
 #revision-ia .formulario { margin-top: 16px; }
 
+/* Puntuación al cantar */
+.chip.puntos { --nivel: 0; position: relative; overflow: hidden; background: var(--acento-suave); color: var(--acento-texto); font-variant-numeric: tabular-nums; }
+.chip.puntos::before { content: ""; position: absolute; inset: auto 0 0 0; height: calc(var(--nivel) * 100%); background: rgba(143,174,224,.18); transition: height .08s linear; }
+.chip.puntaje { gap: 4px; }
+.chip.puntaje svg { width: 13px; height: 13px; fill: var(--acento-texto); }
+.resultado-canto {
+  position: absolute; left: 50%; top: 50%; z-index: 5; width: min(380px, calc(100% - 32px));
+  transform: translate(-50%, -50%); padding: 26px 24px 22px; border-radius: 28px; text-align: center;
+  background: var(--material); -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid var(--material-borde);
+  box-shadow: 0 24px 70px rgba(0,0,0,.55), 0 0 0 100vmax rgba(5,9,18,.6);   /* atenúa lo de atrás */
+  animation: aparecer-dialogo .4s var(--resorte);
+}
+.resultado-canto .cifra { display: block; font-size: 4.4rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; margin: 8px 0 6px; font-variant-numeric: tabular-nums; }
+.resultado-canto .estrellas { display: flex; justify-content: center; gap: 6px; margin-bottom: 18px; }
+.resultado-canto .estrellas svg { width: 28px; height: 28px; fill: var(--superficie-alta); }
+.resultado-canto .estrellas svg.llena { fill: var(--acento-texto); }
+.barra-resultado { display: grid; grid-template-columns: 80px 1fr 44px; align-items: center; gap: 10px; margin: 8px 0; font-size: .85rem; color: var(--texto-2); text-align: left; }
+.barra-resultado .barra { margin: 0; }
+.barra-resultado strong { color: var(--texto); text-align: right; font-variant-numeric: tabular-nums; }
+.resultado-canto .nota { margin: 14px 0 16px; font-size: .85rem; }
+.resultado-canto .acciones { justify-content: center; margin: 0; }
+.resultado-canto .acciones .boton { flex: 1; min-height: 44px; }
+
 /* Barra lateral agrupada como el menú de la consola */
 .nav-grupo { margin: 18px 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-3); }
 
