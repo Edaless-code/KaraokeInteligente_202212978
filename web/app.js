@@ -1257,7 +1257,9 @@ const vistas = {
       <h1>Más</h1>
       <div class="modos">${enlaces.map(([href, icono, titulo, nota]) => `
         <a class="tarjeta modo" href="${href}"><span class="icono-modo">${icono}</span><span><strong>${titulo}</strong><span class="nota">${nota}</span></span></a>`).join("")}</div>
+      <button class="tarjeta modo instalar-tarjeta" data-instalar hidden><span class="icono-modo">${ICON.importar}</span><span><strong>Instalar la app</strong><span class="nota">Queda con tus apps y funciona sin internet</span></span></button>
       <p class="nota tenue" style="margin-top:28px">Edgar Alessandro Chocon Oliva · Carné 202212978</p>`;
+    mostrarInstalar();
   },
 
   papelera() {
@@ -1497,5 +1499,36 @@ contenido.addEventListener("click", async (e) => {
   }
 });
 
+// ---------------------------------------------- app instalable y sin internet
+// El service worker (sw.js) guarda la app y las pistas: después de la primera
+// visita funciona sin conexión. Solo se registra en https o en localhost.
+if ("serviceWorker" in navigator && (location.protocol === "https:" || ["localhost", "127.0.0.1"].includes(location.hostname))) {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* sin service worker la app funciona igual, en línea */ });
+}
+const instalada = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const enIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let pedidoInstalar = null;
+function mostrarInstalar() {
+  const visible = !instalada() && (!!pedidoInstalar || enIOS);
+  document.querySelectorAll("[data-instalar]").forEach((b) => { b.hidden = !visible; });
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); pedidoInstalar = e; mostrarInstalar(); });
+window.addEventListener("appinstalled", () => { pedidoInstalar = null; mostrarInstalar(); avisar("Karaoke instalado: ya está con tus apps"); });
+async function instalarApp() {
+  if (pedidoInstalar) {
+    pedidoInstalar.prompt();
+    await pedidoInstalar.userChoice.catch(() => null);
+    pedidoInstalar = null;
+    mostrarInstalar();
+    return;
+  }
+  // Safari (iPhone/iPad) no tiene aviso de instalación: se explica cómo hacerlo
+  await dialogo({ titulo: "Instalar en el iPhone o iPad", mensaje: "En Safari toca el botón Compartir (el cuadro con la flecha) y luego «Agregar a pantalla de inicio».", aceptar: "Entendido", cancelar: "Cerrar" });
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-instalar]")) instalarApp(); });
+window.addEventListener("offline", () => avisar("Sin conexión: el karaoke sigue funcionando (la IA solo si ya se descargó)"));
+window.addEventListener("online", () => avisar("De nuevo en línea"));
+
 await cargarCanciones();
 navegar();
+mostrarInstalar();

@@ -6,9 +6,13 @@
   <meta name="theme-color" content="#0B1220">
   <meta name="description" content="Karaoke Inteligente: la letra sigue al cantante. Reproduce tus canciones con la letra a tiempo y baja la voz del artista.">
   <title>Karaoke Inteligente</title>
-  <link rel="icon" href="icono.png">
-  <link rel="apple-touch-icon" href="icono.png">
+  <link rel="icon" href="iconos/icono-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Karaoke">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -34,6 +38,9 @@
         <a href="#programa" data-ruta="programa">Programa</a>
         <a href="#historial" data-ruta="historial">Historial</a>
       </nav>
+      <button class="boton secundario chico instalar" data-instalar hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2Zm7-3 5-5h-3V4h-4v8H7l5 5Z"/></svg><span>Instalar app</span>
+      </button>
       <p class="firma">Edgar Alessandro Chocon Oliva<br>Carné 202212978</p>
     </aside>
 

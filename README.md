@@ -78,7 +78,11 @@ La carpeta [`web/`](web) es la versión para el navegador (HTML, CSS y JavaScrip
 python web/servir.py
 ```
 
-Se abre sola en http://localhost:8000. `servir.py` permite adelantar y regresar la canción, cosa que `python -m http.server` no hace. Para publicarla en Vercel se importa el repositorio y se elige `web` como *Root Directory* (sin comando de compilación). El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
+Se abre sola en http://localhost:8000. `servir.py` permite adelantar y regresar la canción, cosa que `python -m http.server` no hace. El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
+
+**Se instala como app** (botón *Instalar app*; en iPhone, Safari → Compartir → *Agregar a pantalla de inicio*) y **funciona sin internet** después de la primera visita: un *service worker* (`web/sw.js`) guarda la app y las pistas.
+
+**Publicarla en Vercel:** en [vercel.com/new](https://vercel.com/new) se importa este repositorio, se elige `web` como *Root Directory* (sin comando de compilación) y, en *Settings → Git → Production Branch*, la rama donde está la versión que se quiere publicar.
 
 ## 📚 Documentación
 
