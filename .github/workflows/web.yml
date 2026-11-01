@@ -1,0 +1,51 @@
+# Empaqueta la versión web (carpeta web/) en un ZIP y lo publica en el
+# lanzamiento "web", con un enlace de descarga que no cambia:
+# https://github.com/Edaless-code/KaraokeInteligente_202212978/releases/download/web/KaraokeWeb.zip
+name: Versión web
+
+on:
+  push:
+    paths: ["web/**", ".github/workflows/web.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-web
+  cancel-in-progress: true
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probar el servidor local
+        run: |
+          python web/servir.py --sin-navegador &
+          sleep 2
+          curl -fsS -o /dev/null http://localhost:8000/
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-99' http://localhost:8000/audio/Sound_of_You.mp3)" = 206
+          curl -fsS http://localhost:8000/datos/canciones.json | python -c "import json,sys; assert len(json.load(sys.stdin)) >= 2"
+      - name: Crear KaraokeWeb.zip
+        run: |
+          mkdir -p dist/KaraokeWeb
+          cp -r web/. dist/KaraokeWeb/
+          rm -f dist/KaraokeWeb/vercel.json dist/KaraokeWeb/.vercelignore
+          cd dist && zip -qr KaraokeWeb.zip KaraokeWeb && unzip -l KaraokeWeb.zip
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: web
+          name: Versión web
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          body: |
+            Versión web del Karaoke Inteligente (Edgar Alessandro Chocon Oliva, carné 202212978).
+
+            1. Descargue **KaraokeWeb.zip** y descomprímalo.
+            2. Windows: doble clic en `abrir.bat`. Otro sistema: `python servir.py`.
+            3. Se abre sola en http://localhost:8000. Para el modo automático use Chrome o Edge y permita el micrófono.
+
+            Requiere Python 3. Se actualiza solo con cada cambio de la carpeta `web/`.
+          files: dist/KaraokeWeb.zip
+          overwrite_files: true

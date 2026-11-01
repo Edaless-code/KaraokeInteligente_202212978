@@ -1,0 +1,26 @@
+KARAOKE INTELIGENTE - VERSION WEB
+Edgar Alessandro Chocon Oliva - Carne 202212978
+
+COMO ABRIRLA
+  Windows: doble clic en abrir.bat
+  Cualquier sistema: en esta carpeta, ejecutar   python servir.py
+
+Se abre sola en el navegador (http://localhost:8000). Para cerrarla, cierre
+la ventana negra o presione Ctrl+C.
+
+Requisito: Python 3 (https://www.python.org/downloads/). No hay que instalar
+nada mas.
+
+No se abre con doble clic en index.html: el navegador bloquea la lectura de
+las canciones y el audio desde archivos locales; por eso se usa servir.py.
+
+MODO AUTOMATICO
+  Use Chrome o Edge y permita el microfono. Cuando reconoce la cancion, la
+  pista entra donde va cantando, con la voz del artista al 25 %.
+
+PUBLICARLA EN INTERNET (Vercel)
+  Importar el repositorio en vercel.com y elegir "web" como Root Directory,
+  sin comando de compilacion.
+
+Las canciones "Sound of You" y "Ghost of you" son obras originales de
+Edgar Alessandro Chocon Oliva. Todos los derechos reservados.

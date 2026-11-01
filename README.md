@@ -72,13 +72,13 @@ App móvil en la computadora: `pip install kivy plyer` y luego `python movil/mai
 
 ## 🌐 Versión web
 
-La carpeta [`web/`](web) es una página sin dependencias (HTML, CSS y JavaScript) con la biblioteca, los modos manual y automático, la reproducción con letra y la voz del artista al 100/75/50/25 %. Para probarla:
+La carpeta [`web/`](web) es una página sin dependencias (HTML, CSS y JavaScript) con la biblioteca, los modos manual y automático, la reproducción con letra y la voz del artista al 100/75/50/25 %. Para probarla, en Windows basta con doble clic en `web/abrir.bat`; en cualquier sistema:
 
 ```bash
-python -m http.server 8000 -d web
+python web/servir.py
 ```
 
-Luego se abre http://localhost:8000. Para publicarla en Vercel se importa el repositorio y se elige `web` como *Root Directory* (sin comando de compilación). El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
+Se abre sola en http://localhost:8000. `servir.py` permite adelantar y regresar la canción, cosa que `python -m http.server` no hace. Para publicarla en Vercel se importa el repositorio y se elige `web` como *Root Directory* (sin comando de compilación). El modo automático usa el reconocimiento de voz del navegador (Chrome, Edge o Safari).
 
 ## 📚 Documentación
 
