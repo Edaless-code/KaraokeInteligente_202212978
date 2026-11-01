@@ -69,6 +69,11 @@ Builder.load_string("""
                     descripcion: "La forma más rápida: nombre y letra completa."
                     on_release: app.abrir("nueva", modo="pegar")
                 OpcionAgregar:
+                    icono: "waveform"
+                    titulo: "Desde un MP3: la IA escribe la letra"
+                    descripcion: "Elige la canción y la IA escribe su letra con los tiempos de cada línea."
+                    on_release: root.desde_audio()
+                OpcionAgregar:
                     icono: "format-list-numbered"
                     titulo: "Línea por línea"
                     descripcion: "Escribe una línea y presiona Enter. Vacía = terminar."
@@ -334,6 +339,105 @@ class Importar(Pantalla):
         except Exception:
             pass
         self._pedir_ruta()
+
+    # ------------------------------------------------ desde un MP3 con IA
+    def desde_audio(self):
+        """La IA (Whisper) escucha el audio y escribe la letra con el inicio de
+        cada línea; se guarda con su pista (como f → m en la consola). Solo en
+        la computadora: en el teléfono no está Whisper."""
+        try:
+            from karaoke.audio.proceso import whisper_disponible
+
+            disponible = whisper_disponible()
+        except Exception:
+            disponible = False
+        if not disponible:
+            self.app.avisar("Escribir la letra con IA funciona en la computadora (necesita faster-whisper)", "error")
+            return
+        self._elegir_audio()
+
+    def _elegir_audio(self):
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.modalview import ModalView
+
+        filtros = [f"*.{e}" for e in ("mp3", "wav", "flac", "ogg", "m4a")]
+        filtros += [f.upper() for f in filtros]
+        ventana = ModalView(size_hint=(0.9, 0.85), background_color=(0, 0, 0, 0), overlay_color=T.VELO)
+        caja = BoxLayout(orientation="vertical", spacing=T.ESP["s"], padding=T.ESP["m"])
+        selector = FileChooserListView(path=str(Path.home()), filters=filtros)
+        botones = BoxLayout(size_hint_y=None, height=T.ALTO_BOTON, spacing=T.ESP["s"])
+        elegir = Boton(texto="Escribir la letra con IA", icono="waveform")
+        cancelar = Boton(texto="Cancelar", estilo="fantasma")
+
+        def usar(*_):
+            ventana.dismiss()
+            if selector.selection:
+                self._transcribir(Path(selector.selection[0]))
+
+        elegir.bind(on_release=usar)
+        cancelar.bind(on_release=lambda *_: ventana.dismiss())
+        botones.add_widget(cancelar)
+        botones.add_widget(elegir)
+        caja.add_widget(selector)
+        caja.add_widget(botones)
+        ventana.add_widget(caja)
+        ventana.open()
+
+    def _transcribir(self, ruta: Path):
+        import threading
+
+        dialogo = Dialogo(titulo="La IA está escuchando la canción", icono="waveform",
+                          mensaje=f"{ruta.name}\nPreparando la pista… (tarda uno o dos minutos)")
+        dialogo.auto_dismiss = False
+        dialogo.open()
+
+        def progreso(fraccion: float):
+            texto = f"{ruta.name}\nEscribiendo la letra… {int(fraccion * 100)} %"
+            Clock.schedule_once(lambda *_: setattr(dialogo, "mensaje", texto), 0)
+
+        def trabajar():
+            try:
+                from karaoke.audio.desde_audio import crear_borrador
+
+                borrador = crear_borrador(ruta, self.app.config_karaoke, None, progreso)
+            except Exception as ex:
+                error = f"No se pudo escribir la letra: {ex}"
+                Clock.schedule_once(lambda *_: (dialogo.dismiss(), self.app.avisar(error, "error")), 0)
+                return
+            Clock.schedule_once(lambda *_: (dialogo.dismiss(), self._guardar_borrador(borrador)), 0)
+
+        threading.Thread(target=trabajar, daemon=True).start()
+
+    def _guardar_borrador(self, borrador):
+        from karaoke.audio.desde_audio import guardar_pista, tiempos_para
+
+        bd, config = self.app.bd, self.app.config_karaoke
+        if not borrador.lineas:
+            self.app.avisar("La IA no escuchó letra en la pista", "error")
+            return
+        try:
+            existente = bd.existe_nombre(borrador.nombre)
+            if existente is not None:
+                # Como en la consola: ya estaba (por ejemplo, desde un .txt). Se le
+                # asocia la pista y su letra se sincroniza sin cambiarla.
+                cancion = bd.obtener_cancion(existente)
+                bd.guardar_tiempos(existente, tiempos_para(cancion.lineas, borrador.palabras, borrador.duracion))
+                codigo = existente
+                mensaje = f"«{borrador.nombre}» ya existía: se le agregó la pista y su letra quedó sincronizada"
+            else:
+                codigo = bd.agregar_cancion(borrador.nombre, borrador.lineas, origen="audio", idioma=borrador.idioma)
+                if len(borrador.tiempos) == len(borrador.lineas) and None not in borrador.tiempos:
+                    bd.guardar_tiempos(codigo, borrador.tiempos)
+                mensaje = f"La IA escribió {len(borrador.lineas)} líneas; revísalas con «Corregir»"
+            bd.guardar_pista(codigo, guardar_pista(borrador.archivo, config, codigo, borrador.nombre))
+        except Exception as ex:
+            self.app.avisar(f"No se pudo guardar: {ex}", "error")
+            return
+        self.app.datos_cambiaron()
+        self.app.avisar(mensaje)
+        self.app.historial = ["biblioteca"]
+        self.app.gestor.get_screen("detalle").codigo = codigo
+        self.app.abrir("detalle", codigo=codigo)
 
     def _pedir_ruta(self):
         from ..componentes import Campo
