@@ -142,6 +142,142 @@ def sincronia(lineas: list[str], oidas: list[PalabraConTiempo],
     return tiempos, directas
 
 
+def _partes_oidas(oidas: list[PalabraConTiempo]) -> tuple[list[str], list[float], list[float]]:
+    """Palabras normalizadas de la IA con su inicio y fin (una palabra con
+    varias partes, como "horror-lovely", reparte su duración)."""
+    tokens: list[str] = []
+    inicios: list[float] = []
+    fines: list[float] = []
+    for palabra in oidas:
+        partes = normalizar(palabra.texto)
+        paso = (palabra.fin - palabra.inicio) / max(1, len(partes))
+        for k, parte in enumerate(partes):
+            tokens.append(parte)
+            inicios.append(palabra.inicio + paso * k)
+            fines.append(palabra.inicio + paso * (k + 1))
+    return tokens, inicios, fines
+
+
+def _dura(trozo: str) -> float:
+    """Duración típica de una palabra cantada, según su largo."""
+    return min(0.9, max(0.25, 0.12 + 0.055 * len(trozo)))
+
+
+def _repartir(trozos: list[str], desde: float, hasta: float) -> list[tuple[float, float]]:
+    """Reparte los trozos entre ``desde`` y ``hasta`` según su duración típica
+    (si no caben, se comprimen)."""
+    duraciones = [_dura(t) for t in trozos]
+    total = sum(duraciones) or 1.0
+    escala = min(1.0, max(0.0, hasta - desde) / total)
+    resultado = []
+    t = desde
+    for d in duraciones:
+        resultado.append((t, t + d * escala))
+        t += d * escala
+    return resultado
+
+
+def _compartir(tiempos: list, j: int, antes: list[str], trozo: str) -> float:
+    """Cuando unas palabras de la letra no tienen espacio antes de la palabra
+    ``j`` (la IA las oyó juntas), toman la primera parte del tiempo de ``j``
+    según su largo. Devuelve dónde terminan."""
+    inicio, fin = tiempos[j]
+    largo = sum(len(t) for t in antes)
+    corte = inicio + (fin - inicio) * largo / max(1, largo + len(trozo))
+    tiempos[j] = (corte, fin)
+    return corte
+
+
+def tiempos_de_palabras(lineas: list[str], oidas: list[PalabraConTiempo],
+                        duracion: float | None = None) -> tuple[list[float], list[list[tuple[float, float]]]]:
+    """Inicio de cada línea y, por línea, el (inicio, fin) de cada palabra tal
+    como se muestra (cada trozo separado por espacios, con sus signos), para ir
+    pintando la letra al ritmo del cantante.
+
+    Las palabras que la IA oyó toman su tiempo; las demás se reparten entre
+    sus vecinas según su largo, sin invadir las pausas entre líneas. El inicio
+    de cada línea es el de su primera palabra."""
+    total = duracion or (oidas[-1].fin if oidas else 0.0)
+    base, _ = sincronia(lineas, oidas, total)
+    trozos = [linea.split() for linea in lineas]
+    letra: list[str] = []
+    dueno: list[tuple[int, int]] = []
+    for i, fila in enumerate(trozos):
+        for j, trozo in enumerate(fila):
+            for parte in normalizar(trozo):
+                letra.append(parte)
+                dueno.append((i, j))
+    tokens, ini, fin = _partes_oidas(oidas)
+    pareja = alinear_palabras(letra, tokens)
+    oido: dict[tuple[int, int], list[float]] = {}
+    for k, j in enumerate(pareja):
+        if j is None:
+            continue
+        actual = oido.setdefault(dueno[k], [ini[j], fin[j]])
+        actual[0], actual[1] = min(actual[0], ini[j]), max(actual[1], fin[j])
+    # Se descartan los tiempos que retroceden (alineamientos dudosos).
+    ultimo = -1.0
+    for i, fila in enumerate(trozos):
+        for j in range(len(fila)):
+            t = oido.get((i, j))
+            if t is None:
+                continue
+            if t[0] <= ultimo:
+                del oido[(i, j)]
+            else:
+                ultimo = t[0]
+
+    resultado: list[list[tuple[float, float]]] = []
+    fin_anterior = 0.0
+    for i, fila in enumerate(trozos):
+        siguiente = base[i + 1] if i + 1 < len(base) else max(total, base[i] + 4.0)
+        conocidas = [j for j in range(len(fila)) if (i, j) in oido]
+        tiempos: list[tuple[float, float] | None] = [None] * len(fila)
+        if not fila:
+            resultado.append([])
+            continue
+        if not conocidas:
+            inicio = max(base[i], fin_anterior)
+            tiempos = list(_repartir(fila, inicio, max(inicio, siguiente - 0.2)))
+        else:
+            for j in conocidas:
+                tiempos[j] = tuple(oido[(i, j)])
+            # Antes de la primera conocida: hacia atrás, sin pisar la línea anterior.
+            primera = conocidas[0]
+            if primera:
+                hasta = tiempos[primera][0]
+                desde = max(fin_anterior, hasta - sum(_dura(t) for t in fila[:primera]))
+                if hasta - desde < 0.1 * primera:  # sin espacio: comparten la palabra oída
+                    desde, hasta = hasta, _compartir(tiempos, primera, fila[:primera], fila[primera])
+                tiempos[:primera] = _repartir(fila[:primera], desde, hasta)
+            # Entre conocidas: se reparten en el hueco.
+            for a, b in zip(conocidas, conocidas[1:]):
+                if b - a > 1:
+                    desde, hasta = tiempos[a][1], tiempos[b][0]
+                    if hasta - desde < 0.1 * (b - a - 1):  # p. ej. "every thing" / "everything"
+                        desde, hasta = hasta, _compartir(tiempos, b, fila[a + 1:b], fila[b])
+                    tiempos[a + 1:b] = _repartir(fila[a + 1:b], desde, hasta)
+            # Después de la última conocida: hacia adelante, sin pasar de la siguiente línea.
+            ultima = conocidas[-1]
+            if ultima < len(fila) - 1:
+                desde = tiempos[ultima][1]
+                hasta = min(siguiente - 0.1, desde + sum(_dura(t) for t in fila[ultima + 1:]))
+                tiempos[ultima + 1:] = _repartir(fila[ultima + 1:], desde, max(desde, hasta))
+        # Cada palabra termina antes de que empiece la siguiente (y dura algo).
+        limpias: list[tuple[float, float]] = []
+        for j, (a, b) in enumerate(tiempos):
+            a = max(a, fin_anterior if j == 0 else limpias[-1][0] + 0.01)
+            tope = tiempos[j + 1][0] if j + 1 < len(tiempos) else min(siguiente, a + 3.0)
+            b = min(max(b, a + 0.08), max(tope, a + 0.08))
+            limpias.append((round(a, 2), round(b, 2)))
+        resultado.append(limpias)
+        fin_anterior = limpias[-1][1]
+    inicios = [fila[0][0] if fila else base[i] for i, fila in enumerate(resultado)]
+    for i in range(1, len(inicios)):  # siempre en aumento
+        inicios[i] = max(inicios[i], inicios[i - 1])
+    return [round(t, 2) for t in inicios], resultado
+
+
 def _completar(inicios: list[float | None], lineas: list[str], duracion: float) -> list[float]:
     """Rellena las líneas sin tiempo repartiéndolas entre las conocidas y
     obliga a que los tiempos vayan en aumento."""

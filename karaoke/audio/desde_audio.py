@@ -269,16 +269,32 @@ def letra_junto_al_audio(ruta: Path) -> list[str] | None:
     return lineas or None
 
 
-def sincronizar(ruta: Path, config: Config, lineas: list[str], progreso: Progreso | None = None,
-                idioma: str | None = None) -> list[float]:
-    """Tiempos de una letra ya conocida con su pista (la IA solo escucha cuándo)."""
+def _oir_con_tiempos(ruta: Path, config: Config, progreso: Progreso | None,
+                     idioma: str | None) -> tuple[list[Palabra], float]:
     from .proceso import whisper_disponible
 
     if not whisper_disponible():
         raise ErrorMotor("Para sincronizar la letra hace falta Whisper (pip install faster-whisper).")
     muestras = leer_voz(ruta, config.booleano("audio", "aislar_voz_letras"))
     palabras, _, _ = _con_whisper(muestras, config, idioma, progreso)
-    return tiempos_para(lineas, palabras, len(muestras) / FRECUENCIA)
+    return palabras, len(muestras) / FRECUENCIA
+
+
+def sincronizar(ruta: Path, config: Config, lineas: list[str], progreso: Progreso | None = None,
+                idioma: str | None = None) -> list[float]:
+    """Tiempos de una letra ya conocida con su pista (la IA solo escucha cuándo)."""
+    palabras, duracion = _oir_con_tiempos(ruta, config, progreso, idioma)
+    return tiempos_para(lineas, palabras, duracion)
+
+
+def sincronizar_palabras(ruta: Path, config: Config, lineas: list[str], progreso: Progreso | None = None,
+                         idioma: str | None = None) -> tuple[list[float], list[list[tuple[float, float]]]]:
+    """Como ``sincronizar`` y además el (inicio, fin) de cada palabra de cada
+    línea, para pintar la letra palabra por palabra."""
+    from ..alineacion import PalabraConTiempo, tiempos_de_palabras
+
+    palabras, duracion = _oir_con_tiempos(ruta, config, progreso, idioma)
+    return tiempos_de_palabras(lineas, [PalabraConTiempo(p.texto, p.inicio, p.fin) for p in palabras], duracion)
 
 
 def guardar_pista(ruta: Path, config: Config, codigo: int, nombre: str) -> str:

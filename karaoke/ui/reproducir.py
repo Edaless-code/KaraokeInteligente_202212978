@@ -1,8 +1,8 @@
 """Opción (r): reproducir una canción de la biblioteca con su letra a tiempo.
 
-La pista suena por las bocinas y la letra cambia sola, cada línea un poco
-**antes** de que se cante (``segundos_letra_adelantada``), para poder leerla y
-entrar a tiempo aunque no se sepa la canción. En la intro se ve una cuenta
+La pista suena por las bocinas y la letra cambia sola, cada línea justo
+cuando se canta (``segundos_letra_adelantada`` la puede adelantar); la línea
+siguiente ya se ve debajo para leerla y entrar a tiempo. En la intro se ve una cuenta
 regresiva hasta la primera línea.
 
 La primera vez que se reproduce una canción sin tiempos, la IA escucha la

@@ -119,9 +119,9 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         # Sincronía con una pista grabada (ver karaoke/sincronia.py): el análisis
         # va estos segundos ANTES de lo que suena por las bocinas…
         "segundos_analisis_adelantado": "3.0",
-        # …y la letra se muestra este tiempo antes de que se cante, para
-        # alcanzar a leerla (0 = exactamente cuando suena la voz).
-        "segundos_letra_adelantada": "0.5",
+        # …y la letra se muestra este tiempo antes de que se cante (0 = junto
+        # con la voz; la línea siguiente ya se ve debajo para leerla antes).
+        "segundos_letra_adelantada": "0.0",
         # Lo que tardan los motores en reconocer lo que se canta.
         "segundos_latencia_reconocimiento": "1.0",
         # Segundos de silencio para suspender (ignorar) y para terminar la
@@ -235,6 +235,10 @@ def cargar_config(carpeta: Path | None = None, crear: bool = True) -> Config:
         parser.read(ruta, encoding="utf-8")
         for seccion in parser.sections():
             config.valores[seccion] = dict(parser[seccion])
+        # Antes la letra iba medio segundo adelantada por omisión; ahora va
+        # junto con la voz. Un karaoke.ini con el valor viejo sin cambiar toma el nuevo.
+        if config.valores.get("automatico", {}).get("segundos_letra_adelantada", "").strip() == "0.5":
+            del config.valores["automatico"]["segundos_letra_adelantada"]
     elif crear:
         try:
             config.guardar()

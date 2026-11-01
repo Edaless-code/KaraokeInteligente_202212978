@@ -36,3 +36,12 @@ def test_guardar_conserva_lo_establecido(tmp_path):
 def test_variable_de_entorno_karaoke_home(tmp_path, monkeypatch):
     monkeypatch.setenv("KARAOKE_HOME", str(tmp_path))
     assert cargar_config().carpeta == tmp_path.resolve()
+
+
+def test_karaoke_ini_viejo_toma_la_letra_junto_con_la_voz(tmp_path):
+    from karaoke.config import cargar_config
+
+    (tmp_path / "karaoke.ini").write_text("[automatico]\nsegundos_letra_adelantada = 0.5\n", encoding="utf-8")
+    assert cargar_config(tmp_path).decimal("automatico", "segundos_letra_adelantada") == 0.0
+    (tmp_path / "karaoke.ini").write_text("[automatico]\nsegundos_letra_adelantada = 0.3\n", encoding="utf-8")
+    assert cargar_config(tmp_path).decimal("automatico", "segundos_letra_adelantada") == 0.3  # elegido a mano

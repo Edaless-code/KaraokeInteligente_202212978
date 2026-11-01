@@ -121,7 +121,7 @@ El programa está en capas. El núcleo (datos, búsqueda y lógica del karaoke) 
 | `karaoke/audio/desde_audio.py` | *f → m*: transcribe una pista completa con Whisper (Vosk si no está), la convierte en líneas (descarta alucinaciones, separa oraciones, corta bucles de la IA, oculta groserías) y copia la pista a `pistas/` |
 | `karaoke/alineacion.py` | Alinea una letra conocida con las palabras (y tiempos) que oyó la IA: alineamiento global de dos estados con bono a coincidencias seguidas; da el segundo de inicio de cada línea |
 | `karaoke/audio/reproductor.py` | Reproduce la pista con un reloj que descuenta la latencia de la tarjeta y baja la voz del artista (resta lo que es igual en ambos canales, por frecuencia, en 180–5000 Hz) |
-| `karaoke/ui/reproducir.py` | Opción *r*: letra a tiempo con la pista, adelantada `segundos_letra_adelantada` |
+| `karaoke/ui/reproducir.py` | Opción *r*: letra a tiempo con la pista (junto con la voz; `segundos_letra_adelantada` la puede adelantar) |
 | `karaoke/sincronia.py` | Línea de tiempo que muestra la letra adelantada a la voz cuando la pista suena por las bocinas |
 | `karaoke/ui/*` | Menús, pantalla del karaoke (diseño fijo en pantalla alterna, redibujo solo al cambiar), modos manual y automático, agregar desde audio, diagnóstico de audio |
 | `herramientas/transcribir.py` | Mide la transcripción de un audio con cada motor (sección 7) |
@@ -298,7 +298,7 @@ El `Seguidor` mantiene la **posición** (la siguiente palabra a cantar) y la **l
 8. **Letra adelantada a la voz con pistas grabadas (`karaoke/sincronia.py`).** Los motores reconocen una palabra después de oírla (Vosk ~1 s, Whisper varios segundos), así que mostrar la letra al reconocerla haría que la voz siempre fuera adelantada. Con un archivo de audio se trabaja como un reproductor con subtítulos:
    - el análisis lee la pista `segundos_analisis_adelantado` (3 s) **antes** de que suene por las bocinas;
    - cada estado de la pantalla se guarda con su segundo de análisis;
-   - se muestra el estado de lo que se canta `segundos_letra_adelantada` (0.5 s) después de lo que suena, descontando `segundos_latencia_reconocimiento` (1 s). La pantalla va `3 − 0.5 − 1 = 1.5 s` detrás del análisis.
+   - se muestra el estado de lo que se canta con `segundos_letra_adelantada` (0 s por omisión: junto con la voz), descontando `segundos_latencia_reconocimiento` (1 s). La pantalla va `3 − 0 − 1 = 2 s` detrás del análisis.
    - Las teclas del operador se ven al instante, sin ese retraso.
    - Con el micrófono no se puede retrasar al cantante: la letra se adelanta con el avance anticipado, la predicción por tempo y las líneas siguientes visibles.
 

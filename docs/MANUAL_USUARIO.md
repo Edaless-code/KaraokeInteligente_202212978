@@ -247,7 +247,7 @@ Al terminar la última línea, la canción se registra como cantada, se marca en
 
 **Cantar con la música (micrófono).** Si la canción reconocida tiene pista y tiempos (las de ejemplo ya los traen), la **pista entra sola justo donde va el cantante**, con la **voz del artista al 25 %**. Desde ahí la letra sigue a la pista, con las teclas de "Reproducir con letra" (espacio, ← →, - +). Se desactiva o cambia el nivel en `karaoke.ini` (`pista_al_reconocer` y `voz_pista_al_reconocer`). Lo mismo pasa en la versión de escritorio y en la versión web.
 
-**La letra va adelantada a la voz.** Con una pista que suena por las bocinas, el programa la analiza **3 segundos antes** de que se escuche y muestra cada línea **medio segundo antes** de que se cante, para alcanzar a leerla y entrar a tiempo (como los subtítulos de un video). Con micrófono en vivo, la línea siguiente aparece un poco antes de que termine la actual. Los tiempos se ajustan en `karaoke.ini` (`segundos_analisis_adelantado` y `segundos_letra_adelantada`).
+**La letra va junto con la voz.** Con una pista que suena por las bocinas, el programa la analiza **3 segundos antes** de que se escuche y cambia cada línea **justo cuando se canta**; la línea siguiente ya se ve debajo para leerla antes. Con micrófono en vivo, la línea siguiente aparece un poco antes de que termine la actual. Los tiempos se ajustan en `karaoke.ini` (`segundos_analisis_adelantado` y `segundos_letra_adelantada`).
 
 La pantalla es la misma del modo manual. Mientras identifica la canción muestra **"Escuchando…"**, y si aprende una canción nueva muestra el borrador de su letra. Los **detalles técnicos** (lo último que escuchó la IA, el nivel del sonido y si hay voz, el tempo del cantante) se ocultan para que la pantalla no se mueva; se muestran u ocultan con la tecla **d**.
 
@@ -275,7 +275,7 @@ Las teclas del modo manual siguen funcionando **para corregir lo que haga la IA*
 
 ### 6.1 Reproducir con letra (r) *(agregada)*
 
-Es el karaoke "de toda la vida": la **pista suena** por las bocinas y la **letra cambia sola**, cada línea **medio segundo antes** de que se cante, para leerla y entrar a tiempo aunque no se conozca la canción. Durante la intro se ve una **cuenta regresiva** hasta la primera línea.
+Es el karaoke "de toda la vida": la **pista suena** por las bocinas y la **letra cambia sola**, cada línea **justo cuando se canta** (la siguiente ya se ve debajo, para leerla y entrar a tiempo aunque no se conozca la canción). En la versión web, además, cada palabra se va **pintando de azul** al ritmo del cantante. Durante la intro se ve una **cuenta regresiva** hasta la primera línea.
 
 1. Se muestran numeradas las canciones que tienen pista (las agregadas con **f → m** y las de ejemplo). Escriba el número.
 2. La primera vez que se abre una canción, la IA escucha la pista **una sola vez** (alrededor de un minuto) para saber en qué segundo empieza cada línea. Queda guardado: las siguientes veces empieza al instante.

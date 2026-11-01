@@ -51,3 +51,32 @@ def test_linea_en_con_adelanto():
     assert linea_en(tiempos, 12.4, adelanto=0.5) == 0
     assert linea_en(tiempos, 12.6, adelanto=0.5) == 1
     assert linea_en(tiempos, 99.0) == 2
+
+
+def test_tiempos_de_cada_palabra_para_pintar_la_letra():
+    from karaoke.alineacion import tiempos_de_palabras
+
+    letra = ["I heard  the sound of  you,", "in every thing I do", "Hola... ¿cómo estás?"]
+    oidas = (oir("I heard the sound of you", 10.0)
+             + oir("in everything I do", 20.0)                     # "every thing" junto
+             + [PalabraConTiempo("ola", 30.0, 30.5), PalabraConTiempo("estas", 31.0, 31.8)])
+    inicios, palabras = tiempos_de_palabras(letra, oidas, 40.0)
+    # una entrada por trozo separado por espacios, tal como se muestra
+    assert [len(f) for f in palabras] == [len(l.split()) for l in letra]
+    assert inicios == [f[0][0] for f in palabras] == [10.0, 20.0, 30.0]
+    assert palabras[0][1] == (10.4, 10.7)                          # "heard" con el tiempo que oyó la IA
+    todas = [p for f in palabras for p in f]
+    for (a, b), (c, _) in zip(todas, todas[1:]):
+        assert a < b <= c + 1e-9                                   # en orden, sin encimarse
+    # "every" y "thing" se reparten la palabra que la IA oyó junta
+    assert 20.4 <= palabras[1][1][0] < palabras[1][2][0] < 20.7
+    # "¿cómo" no se oyó: queda entre "Hola..." y "estás?"
+    assert 30.5 <= palabras[2][1][0] < 31.0
+
+
+def test_palabras_sin_nada_oido_se_reparten():
+    from karaoke.alineacion import tiempos_de_palabras
+
+    inicios, palabras = tiempos_de_palabras(LETRA, [], 40.0)
+    assert len(inicios) == len(LETRA) and inicios == sorted(inicios)
+    assert all(f[0][0] == t for f, t in zip(palabras, inicios))
