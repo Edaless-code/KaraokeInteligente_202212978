@@ -238,3 +238,82 @@ def test_al_reconocer_con_microfono_entra_la_pista(entorno, tmp_path):
     assert (codigo, archivo) == (codigos["lluvia"], "pista.mp3")
     assert 18.0 <= desde <= 27.0
     assert not modo.revisar_entrada_pista(Procesador(), control)  # una sola vez por canción
+
+
+def test_escucha_en_espanol_aunque_las_canciones_sean_en_ingles(tmp_path):
+    from karaoke.audio.proceso import idiomas_escucha
+
+    config = cargar_config(tmp_path)
+    assert idiomas_escucha(config, ["en"]) == ["es", "en"]           # antes: solo ["en"]
+    assert idiomas_escucha(config, []) == ["es", "en"]
+    config.establecer("audio", "idiomas_automatico", "en")
+    assert idiomas_escucha(config, ["es", "en"]) == ["en", "es"]
+
+
+def test_whisper_elige_entre_los_idiomas_permitidos():
+    from karaoke.audio.motores import elegir_idioma
+
+    permitidos = ["es", "en"]
+    assert elegir_idioma([("en", 0.9), ("es", 0.05)], permitidos) == "en"          # inglés claro
+    assert elegir_idioma([("en", 0.5), ("es", 0.4), ("pt", 0.1)], permitidos) == "es"  # duda: español
+    assert elegir_idioma([("es", 0.3), ("en", 0.1), ("pt", 0.6)], permitidos) == "es"  # nunca portugués
+    assert elegir_idioma([("pt", 0.9)], permitidos) == "es"
+    assert elegir_idioma(None, permitidos) == "es"
+    assert elegir_idioma([("en", 0.9)], []) is None                                  # sin lista: libre
+
+
+def test_whisper_transcribe_de_nuevo_si_detecto_otro_idioma():
+    import numpy as np
+    import queue
+    from types import SimpleNamespace
+
+    from karaoke.audio.motores import MotorWhisper
+
+    pedidos = []
+
+    class Modelo:
+        def transcribe(self, muestras, language=None, **_):
+            pedidos.append(language)
+            segmento = SimpleNamespace(text="la lluvia cae sobre la ciudad", avg_logprob=-0.2)
+            if language is None:  # detectó inglés con poca seguridad
+                return iter([segmento]), SimpleNamespace(language="en", all_language_probs=[("en", 0.5), ("es", 0.45)])
+            return iter([segmento]), SimpleNamespace(language=language, all_language_probs=None)
+
+    motor = MotorWhisper.__new__(MotorWhisper)
+    motor.modelo, motor.idioma, motor.permitidos = Modelo(), "auto", ["es", "en"]
+    motor.filtro_vad, motor.sugerencia, motor._resultados = False, None, queue.Queue()
+    motor._transcribir(np.zeros(16000, dtype=np.float32), 1.0)
+    assert pedidos == [None, "es"]
+    assert motor._resultados.get_nowait().idioma == "es"
+
+
+def test_vosk_en_dos_idiomas_no_mezcla_sus_palabras(entorno):
+    from karaoke.transcripcion import Transcripcion
+
+    control, _, codigos = entorno
+
+    def oir(tipo, texto, idioma, confianza, segundo):
+        control.recibir(Transcripcion(tipo, texto, "libre", idioma, confianza, segundo))
+        control.tic(segundo, True)
+
+    # El canal en inglés "oye" basura mientras se canta en español; sus
+    # parciales no deben cortar ni repetir las palabras del canal en español.
+    oir("parcial", "la lluvia cae", "es", 1.0, 1.0)
+    oir("parcial", "the movie", "en", 1.0, 1.2)
+    oir("parcial", "la lluvia cae sobre la ciudad", "es", 1.0, 1.6)
+    oir("parcial", "the movie car so", "en", 1.0, 1.8)
+    oir("final", "la lluvia cae sobre la ciudad dormida", "es", 0.9, 2.4)
+    oir("final", "the movie car so bread the see that", "en", 0.4, 2.5)
+    assert control.cancion is not None and control.cancion.codigo == codigos["lluvia"]
+    assert control.seguidor.mostrada in (0, 1)
+
+
+def test_aprende_solo_del_idioma_en_que_se_canta(entorno):
+    from karaoke.transcripcion import Transcripcion
+
+    control, _, _ = entorno
+    t_es = Transcripcion("final", "hola", "libre", "es", 0.9, 1.0)
+    t_en = Transcripcion("final", "hello", "libre", "en", 0.3, 1.1)
+    control.recibir(t_es)
+    control.recibir(t_en)
+    assert control._canal_confiable(t_es) and not control._canal_confiable(t_en)

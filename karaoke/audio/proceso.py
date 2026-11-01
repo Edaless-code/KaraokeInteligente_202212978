@@ -46,11 +46,27 @@ def modelo_whisper(config: Config) -> str:
     return str(carpeta) if (carpeta / "model.bin").exists() else config.texto("audio", "modelo_whisper")
 
 
+def idiomas_escucha(config: Config, idiomas_canciones: list[str] | None = None) -> list[str]:
+    """Idiomas en los que escucha el modo automático: los de
+    ``[audio] idiomas_automatico`` (español primero por omisión) y los de las
+    canciones de la base. Antes solo eran los de las canciones, y con una
+    biblioteca en inglés no se entendía a quien cantaba en español."""
+    resultado: list[str] = []
+    for idioma in config.texto("audio", "idiomas_automatico").split(",") + list(idiomas_canciones or []):
+        idioma = idioma.strip().lower()
+        if idioma and idioma not in resultado:
+            resultado.append(idioma)
+    return resultado or ["es"]
+
+
 def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) -> tuple[list[Motor], list[str]]:
     """Crea los motores según ``[audio] motor`` (hibrido | vosk | whisper).
 
     Devuelve (motores, avisos). En modo híbrido se usa Vosk para seguir la
-    letra en tiempo real y Whisper (si está instalado) para identificar."""
+    letra en tiempo real y Whisper (si está instalado) para identificar.
+    ``idiomas`` son los de las canciones; se escucha además en los de
+    ``idiomas_automatico`` (ver ``idiomas_escucha``)."""
+    idiomas = idiomas_escucha(config, idiomas)
     eleccion = config.texto("audio", "motor").lower()
     avisos: list[str] = []
     motores: list[Motor] = []
@@ -74,7 +90,7 @@ def crear_motores(config: Config, idiomas: list[str], sincrono: bool = False) ->
             try:
                 motores.append(MotorWhisper(modelo_whisper(config), "auto",
                                             config.entero("audio", "frecuencia_muestreo"),
-                                            sincrono=sincrono))
+                                            sincrono=sincrono, permitidos=idiomas))
             except ErrorMotor as ex:
                 avisos.append(str(ex))
         elif eleccion == "whisper":

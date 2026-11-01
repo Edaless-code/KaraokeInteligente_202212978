@@ -153,6 +153,25 @@ def es_alucinacion(texto: str) -> bool:
     return " ".join(limpio.split()) in _ALUCINACIONES
 
 
+UMBRAL_IDIOMA = 0.65
+
+
+def elegir_idioma(probabilidades: list[tuple[str, float]] | None, permitidos: list[str],
+                  umbral: float = UMBRAL_IDIOMA) -> str | None:
+    """Idioma para transcribir una ventana: entre los ``permitidos``, el que
+    Whisper ve más probable; si no está seguro (menos de ``umbral`` entre los
+    permitidos), el preferido (el primero). Cantando sobre música Whisper a
+    veces cree que el español es inglés; así no se le escapa a otro idioma."""
+    if not permitidos:
+        return None
+    probables = {i: p for i, p in (probabilidades or []) if i in permitidos}
+    if not probables:
+        return permitidos[0]
+    mejor = max(probables, key=probables.get)
+    total = sum(probables.values()) or 1.0
+    return mejor if mejor == permitidos[0] or probables[mejor] / total >= umbral else permitidos[0]
+
+
 class MotorWhisper(Motor):
     """Transcribe ventanas de ``ventana`` segundos con faster-whisper.
 
@@ -164,7 +183,7 @@ class MotorWhisper(Motor):
 
     def __init__(self, modelo: str = "base", idioma: str = "es", frecuencia: int = 16000,
                  ventana: float = 6.0, solape: float = 1.0, carpeta_modelos: str | None = None,
-                 sincrono: bool = False, filtro_vad: bool = False):
+                 sincrono: bool = False, filtro_vad: bool = False, permitidos: list[str] | None = None):
         try:
             from faster_whisper import WhisperModel
         except ImportError as ex:
@@ -176,6 +195,8 @@ class MotorWhisper(Motor):
             raise ErrorMotor(f"No se pudo cargar el modelo Whisper «{modelo}»: {ex}") from ex
         self.idioma = idioma
         self.idiomas = [idioma]
+        # Con idioma "auto" se elige entre estos (el primero si hay duda).
+        self.permitidos = list(permitidos or [])
         self.frecuencia = frecuencia
         self.ventana = int(ventana * frecuencia)
         self.solape = int(solape * frecuencia)
@@ -201,10 +222,15 @@ class MotorWhisper(Motor):
         # Con idioma "auto" Whisper detecta el idioma de cada ventana (canciones
         # bilingües, por ejemplo inglés con versos en español).
         idioma = None if self.idioma in (None, "", "auto") else self.idioma
-        segmentos, informacion = self.modelo.transcribe(
-            muestras, language=idioma, beam_size=1, vad_filter=self.filtro_vad,
-            condition_on_previous_text=False, initial_prompt=self.sugerencia,
-        )
+        opciones = dict(beam_size=1, vad_filter=self.filtro_vad, condition_on_previous_text=False,
+                        initial_prompt=self.sugerencia)
+        segmentos, informacion = self.modelo.transcribe(muestras, language=idioma, **opciones)
+        if idioma is None and self.permitidos:
+            # Los segmentos se calculan al recorrerlos: si el idioma detectado no
+            # es el elegido, se transcribe de nuevo sin haber gastado nada.
+            elegido = elegir_idioma(getattr(informacion, "all_language_probs", None), self.permitidos)
+            if elegido and elegido != informacion.language:
+                segmentos, informacion = self.modelo.transcribe(muestras, language=elegido, **opciones)
         for segmento in segmentos:
             texto = segmento.text.strip()
             if texto and not es_alucinacion(texto):

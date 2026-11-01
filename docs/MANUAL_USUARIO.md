@@ -245,6 +245,8 @@ Al terminar la última línea, la canción se registra como cantada, se marca en
    - si la canción **no está en la base de datos**, la **aprende**: guarda la letra que escucha en tablas temporales y sugiere un nombre. Después se revisa en **f → v**;
    - al terminar una canción, espera la siguiente.
 
+**Idiomas.** El modo automático escucha **en español y en inglés a la vez**, aunque todas las canciones de la base estén en un solo idioma. Whisper elige entre esos dos idiomas y, si duda, se queda con el español. Se cambian en `karaoke.ini` con `idiomas_automatico` (el primero es el preferido). En la versión web el navegador escucha un idioma a la vez: se elige antes de empezar (español por omisión), cambia solo al idioma de la canción reconocida y durante el karaoke se cambia con el botón ES/EN o la tecla **L**.
+
 **Cantar con la música (micrófono).** Si la canción reconocida tiene pista y tiempos (las de ejemplo ya los traen), la **pista entra sola justo donde va el cantante**, con la **voz del artista al 25 %**. Desde ahí la letra sigue a la pista, con las teclas de "Reproducir con letra" (espacio, ← →, - +). Se desactiva o cambia el nivel en `karaoke.ini` (`pista_al_reconocer` y `voz_pista_al_reconocer`). Lo mismo pasa en la versión de escritorio y en la versión web.
 
 **La letra va junto con la voz.** Con una pista que suena por las bocinas, el programa la analiza **3 segundos antes** de que se escuche y cambia cada línea **justo cuando se canta**; la línea siguiente ya se ve debajo para leerla antes. Con micrófono en vivo, la línea siguiente aparece un poco antes de que termine la actual. Los tiempos se ajustan en `karaoke.ini` (`segundos_analisis_adelantado` y `segundos_letra_adelantada`).

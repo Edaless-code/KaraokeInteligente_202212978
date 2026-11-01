@@ -106,6 +106,8 @@ class ControladorAutomatico:
         # Frases completas recientes del motor más confiable: si la canción
         # resulta nueva, son sus primeras líneas.
         self._frases: deque[str] = deque(maxlen=12)
+        # Confianza media de Vosk en cada idioma (para saber en cuál se canta).
+        self._confianza_idioma: dict[str, float] = {}
         self._parcial_libre: list[str] = []
         self._palabras_sin_identificar = 0
         self._consumidas: dict[str, int] = {}
@@ -191,6 +193,7 @@ class ControladorAutomatico:
         self._palabras_sin_identificar = 0
         self._mejor_parecido = 0.0
         self._frases.clear()
+        self._confianza_idioma.clear()
 
     def _identificar(self, palabras: list[str]) -> Resultado | None:
         if len(palabras) < self.palabras_muestra:
@@ -212,13 +215,20 @@ class ControladorAutomatico:
         return mejor
 
     # -------------------------------------------------------- transcripción
+    @staticmethod
+    def _clave(t: Transcripcion) -> str:
+        """Cada idioma del canal libre lleva su propia cuenta: Vosk escucha en
+        español y en inglés a la vez y sus palabras no se deben mezclar."""
+        return f"libre:{t.idioma}" if t.canal == "libre" else t.canal
+
     def _nuevas(self, t: Transcripcion) -> list[str]:
         """Palabras que todavía no se habían entregado de la frase en curso
         (los resultados parciales de Vosk van creciendo)."""
         palabras = t.palabras
-        consumidas = min(self._consumidas.get(t.canal, 0), len(palabras))
+        clave = self._clave(t)
+        consumidas = min(self._consumidas.get(clave, 0), len(palabras))
         nuevas = palabras[consumidas:]
-        self._consumidas[t.canal] = 0 if t.tipo == "final" else len(palabras)
+        self._consumidas[clave] = 0 if t.tipo == "final" else len(palabras)
         return nuevas
 
     def recibir(self, t: Transcripcion, retraso: float = 0.0) -> None:
@@ -242,12 +252,22 @@ class ControladorAutomatico:
 
     def _canal_confiable(self, t: Transcripcion) -> bool:
         """Para decidir que una canción es nueva (y para aprender su letra)
-        se usa el motor más confiable disponible: Whisper si está, si no Vosk."""
-        return t.canal == "whisper" or not self._hay_whisper
+        se usa el motor más confiable disponible: Whisper si está; si no, el
+        canal de Vosk del idioma en que se está cantando (el de más confianza)."""
+        if t.canal == "whisper":
+            return True
+        if self._hay_whisper or t.canal != "libre":
+            return False
+        if len(self._confianza_idioma) < 2:
+            return True
+        return t.idioma == max(self._confianza_idioma, key=self._confianza_idioma.get)
 
     def _recibir_libre(self, t: Transcripcion, retraso: float) -> None:
+        if t.canal == "libre" and t.tipo == "final" and t.palabras:
+            anterior = self._confianza_idioma.get(t.idioma, t.confianza)
+            self._confianza_idioma[t.idioma] = 0.7 * anterior + 0.3 * t.confianza
         nuevas = self._nuevas(t)
-        recientes = self._recientes.setdefault(t.canal, deque(maxlen=40))
+        recientes = self._recientes.setdefault(self._clave(t), deque(maxlen=40))
         for palabra in nuevas:
             recientes.append((self.segundo, palabra))
         if t.tipo == "final" and self._canal_confiable(t):

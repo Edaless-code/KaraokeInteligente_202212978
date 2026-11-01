@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from ..audio.fuentes import ErrorAudio, FuenteArchivo, FuenteAudio, FuenteMicrofono
 from ..audio.modelos import MODELOS, NOMBRES_IDIOMA, descargar_modelo, modelo_valido, ruta_modelo
 from ..audio.motores import ErrorMotor
-from ..audio.proceso import ProcesadorAudio, crear_limpiador, crear_motores, ruta_relativa
+from ..audio.proceso import ProcesadorAudio, crear_limpiador, crear_motores, idiomas_escucha, ruta_relativa
 from ..automatico import (APRENDIENDO, ESPERANDO, FIN, IGNORANDO, PAUSA, ControladorAutomatico,
                           EstadoPantalla)
 from ..sesion import SesionKaraoke
@@ -152,7 +152,8 @@ class ModoAutomatico:
         fuente = self.elegir_fuente()
         if fuente is None:
             return
-        idiomas = sorted({c.idioma for c in self.bd.todas_las_letras().values()}) or ["es"]
+        # Siempre en español (y en inglés), además de los idiomas de las canciones.
+        idiomas = idiomas_escucha(self.config, sorted({c.idioma for c in self.bd.todas_las_letras().values()}))
         self.revisar_modelos(idiomas)
         print(color("  Cargando los modelos de voz…", "tenue"))
         try:

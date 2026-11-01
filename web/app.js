@@ -5,6 +5,10 @@
 
 const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
 const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
+// Idioma del reconocimiento de voz del navegador (escucha uno a la vez).
+const VOZ_NAVEGADOR = { es: "es-MX", en: "en-US" };
+const NOMBRE_IDIOMA = { es: "Español", en: "Inglés" };
+const idiomaVoz = () => (guardado.leer("idioma-voz", "es") === "en" ? "en" : "es");
 const NIVELES_VOZ = [1, 0.75, 0.5, 0.25];
 const $ = (s, r = document) => r.querySelector(s);
 const contenido = $("#contenido");
@@ -333,6 +337,7 @@ function pintarEscenario() {
         <button class="mini con-texto" data-accion="igual" title="Igual (I)">${ICON.igual}<span>Igual</span></button>
         <button class="mini con-texto" data-accion="repetir" title="Repetir (R)">${ICON.repetir}<span>Repetir</span></button>
         <button class="mini con-texto" data-accion="pausa" id="b-pausa" title="Pausa (G / S)">${ICON.pausa}<span>Pausa</span></button>
+        ${esc.modo === "automatico" ? `<button class="mini con-texto idioma" data-accion="idioma" id="b-idioma" title="Idioma en que se canta (L)" aria-label="Cambiar idioma"><b>${idiomaVoz().toUpperCase()}</b><span>${NOMBRE_IDIOMA[idiomaVoz()]}</span></button>` : ""}
         <button class="boton ${esc.modo === "automatico" ? "automatico" : ""}" data-accion="continuar" title="C / Enter">${ICON.siguiente} ${esc.modo === "automatico" ? "Siguiente línea" : "Continuar"}</button>
       </div>`;
     actualizarManual();
@@ -437,6 +442,12 @@ function accion(nombre) {
     case "mas5": r?.mover(5); return;
     case "inicio": r?.ir(0); return;
     case "sincronizar": if (r) empezarSincronizacion(); return;
+    case "idioma": {
+      const nuevo = (esc.reconocedor?.lang || VOZ_NAVEGADOR[idiomaVoz()]).startsWith("es") ? "en" : "es";
+      cambiarIdiomaVoz(nuevo);
+      avisar(`Escuchando en ${NOMBRE_IDIOMA[nuevo].toLowerCase()}`);
+      return;
+    }
     case "pausa":
       if (esc.modo === "pista") { if (r) (r.pausado ? r.reproducir() : r.pausar()); return; }
       esc.pausado = !esc.pausado; break;
@@ -455,7 +466,7 @@ function iniciarAutomatico() {
   actualizarManual();
   if (!Rec) { $("#esc-mensaje").textContent = "Este navegador no tiene reconocimiento de voz. Use Chrome o Edge."; return; }
   const rec = new Rec();
-  rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+  rec.continuous = true; rec.interimResults = true; rec.lang = VOZ_NAVEGADOR[idiomaVoz()];
   let oido = [];
   rec.onresult = (ev) => {
     let texto = "";
@@ -468,9 +479,9 @@ function iniciarAutomatico() {
       const [mejor] = buscar(oido.join(" "), 1);
       if (mejor && mejor.valor >= 0.7 && oido.length >= 4) {
         esc.cancion = mejor.cancion; esc.linea = mejor.linea;
-        rec.lang = mejor.cancion.idioma === "es" ? "es-ES" : "en-US";
         avisar(`Canción identificada: ${mejor.cancion.nombre}`);
         if (entrarConPista(mejor.cancion, mejor.linea)) return;
+        cambiarIdiomaVoz(mejor.cancion.idioma === "en" ? "en" : "es", false);
         pintarEscenario();
       }
       return;
@@ -481,8 +492,21 @@ function iniciarAutomatico() {
   rec.onerror = (e) => { if (e.error === "not-allowed") $("#esc-mensaje").textContent = "Permita el micrófono para usar el modo automático."; };
   esc.reconocedor = rec;
   try { rec.start(); } catch { /* ya iniciado */ }
-  $("#esc-mensaje").textContent = "Escuchando… empiece a cantar";
+  $("#esc-mensaje").textContent = `Escuchando en ${idiomaVoz() === "en" ? "inglés" : "español"}… empiece a cantar`;
 }
+// Cambia el idioma en que escucha (se reinicia el reconocimiento para que
+// tome el nuevo). `recordar`: guardarlo como preferido.
+function cambiarIdiomaVoz(idioma, recordar = true) {
+  if (recordar) guardado.escribir("idioma-voz", idioma);
+  const boton = $("#b-idioma");
+  if (boton) boton.innerHTML = `<b>${idioma.toUpperCase()}</b><span>${NOMBRE_IDIOMA[idioma]}</span>`;
+  const rec = esc.reconocedor;
+  if (rec && rec.lang !== VOZ_NAVEGADOR[idioma]) {
+    rec.lang = VOZ_NAVEGADOR[idioma];
+    try { rec.stop(); } catch { /* se reinicia solo con el idioma nuevo */ }
+  }
+}
+
 // Si la canción reconocida tiene pista y tiempos, la pista entra justo donde va
 // el cantante (a media línea, más lo que tardó el reconocimiento) con la voz del
 // artista al 25 %, y desde ahí la letra sigue a la pista.
@@ -544,7 +568,8 @@ document.addEventListener("keydown", (e) => {
   const tecla = e.key.toLowerCase();
   if (esc.sincronizando && (tecla === " " || tecla === "enter")) { e.preventDefault(); marcarLinea(); return; }
   const mapa = { escape: "cerrar", c: "continuar", enter: "continuar", arrowright: esc.modo === "pista" ? "mas5" : "continuar",
-    arrowleft: esc.modo === "pista" ? "menos5" : "atras", a: "atras", i: "igual", r: "repetir", g: "pausa", s: "pausa", " ": "pausa" };
+    arrowleft: esc.modo === "pista" ? "menos5" : "atras", a: "atras", i: "igual", r: "repetir", g: "pausa", s: "pausa", " ": "pausa",
+    ...(esc.modo === "automatico" ? { l: "idioma" } : {}) };
   if (mapa[tecla]) { e.preventDefault(); accion(mapa[tecla]); return; }
   if (esc.modo === "pista" && (tecla === "[" || tecla === "]")) {   // afinar la letra a mano, de 0.1 en 0.1 s
     esc.desfase = Math.round((esc.desfase + (tecla === "]" ? 0.1 : -0.1)) * 10) / 10;
@@ -691,10 +716,21 @@ const vistas = {
           <li>Canta cerca del micrófono; si suena música, mejor con audífonos.</li>
           <li>Funciona en Chrome, Edge y Safari (en el teléfono también).</li>
         </ul>
+        <p class="etiqueta-campo">¿En qué idioma vas a cantar?</p>
+        <div class="niveles idiomas" role="radiogroup" aria-label="Idioma en que se canta">
+          ${["es", "en"].map((i) => `<button role="radio" data-idioma-voz="${i}" aria-checked="${idiomaVoz() === i}" class="${idiomaVoz() === i ? "activo" : ""}">${i === "es" ? "Español" : "Inglés"}</button>`).join("")}
+        </div>
+        <p class="nota" style="margin:8px 0 16px">El navegador escucha un idioma a la vez. Al reconocer la canción cambia solo a su idioma, y durante el karaoke lo cambias con el botón ES/EN o la tecla L.</p>
         <button class="boton automatico" id="empezar-auto" ${soportado ? "" : "disabled"}>${ICON.mic} Empezar a escuchar</button>
         ${soportado ? "" : `<p class="nota" style="color:var(--aviso)">Este navegador no tiene reconocimiento de voz. Ábrelo en Chrome o Edge.</p>`}
       </div>`;
     $("#empezar-auto")?.addEventListener("click", () => abrirEscenario("automatico", null));
+    contenido.querySelectorAll("[data-idioma-voz]").forEach((b) => b.addEventListener("click", () => {
+      guardado.escribir("idioma-voz", b.dataset.idiomaVoz);
+      contenido.querySelectorAll("[data-idioma-voz]").forEach((x) => {
+        x.classList.toggle("activo", x === b); x.setAttribute("aria-checked", String(x === b));
+      });
+    }));
   },
 
   agregar() {

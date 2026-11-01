@@ -86,6 +86,10 @@ VALORES_POR_OMISION: dict[str, dict[str, str]] = {
         # (91 % y 87 % de las palabras) que con la voz aislada (90 % y 84 %).
         "aislar_voz_letras": "no",
         "idioma": "es",
+        # Idiomas en los que escucha el modo automático, el preferido primero
+        # (además de los de las canciones de la base). Con varios, Vosk escucha
+        # en todos a la vez y Whisper elige entre ellos; si duda, el primero.
+        "idiomas_automatico": "es,en",
         "frecuencia_muestreo": "16000",
         # Índice o nombre del micrófono; vacío = micrófono predeterminado.
         "dispositivo": "",
