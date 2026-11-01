@@ -4,7 +4,7 @@
 // Recibe { id, modelo, idioma, audio } (audio: Float32Array mono a 16 kHz) y
 // responde con mensajes { id, tipo: "progreso" | "listo" | "error", ... }.
 // La primera vez descarga el modelo (queda guardado en el navegador).
-import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+import { pipeline, env, LogitsProcessor, LogitsProcessorList } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
 
 env.allowLocalModels = false;
 
@@ -19,6 +19,17 @@ let suprimidos = [];
 // Fichas que no son voz (♪, [MUSIC], (risas)…): se prohíben como lo hace
 // faster-whisper en la consola (suppress_tokens=[-1]); si no, Whisper escribe
 // "[MUSIC]" en una ventana con intro y se salta lo que se canta.
+// (transformers.js no aplica `suppress_tokens`, por eso va como procesador propio.)
+class SinSimbolos extends LogitsProcessor {
+  constructor(ids) { super(); this.ids = ids; }
+  _call(fichas, logits) {
+    for (let i = 0; i < fichas.length; i++) {
+      const datos = logits[i].data;
+      for (const id of this.ids) if (id < datos.length) datos[id] = -Infinity;
+    }
+    return logits;
+  }
+}
 function fichasSinVoz(tokenizador) {
   const simbolos = [...'"#()*+/:;<=>@[\\]^_`{|}~「」『』',
     ..."<< >> <<< >>> -- --- -( -[ (' (\" (( )) ((( ))) [[ ]] {{ }} ♪♪ ♪♪♪".split(" ")];
@@ -62,7 +73,8 @@ self.onmessage = async ({ data }) => {
       const desde = inicio / FRECUENCIA;
       const primera = inicio === 0, ultima = fin >= audio.length;
       const salida = await escuchar(audio.subarray(inicio, fin), {
-        return_timestamps: "word", task: "transcribe", suppress_tokens: suprimidos, ...(idioma ? { language: idioma } : {}),
+        return_timestamps: "word", task: "transcribe", ...(idioma ? { language: idioma } : {}),
+        logits_processor: (() => { const l = new LogitsProcessorList(); l.push(new SinSimbolos(suprimidos)); return l; })(),
       });
       // De cada ventana se toma lo que cae fuera de la mitad del solape con
       // sus vecinas, para no repetir ni perder palabras en el corte.
