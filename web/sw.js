@@ -7,11 +7,11 @@
 //     como las pide el reproductor para adelantar y regresar.
 //   * La biblioteca de la IA (CDN) y las fuentes quedan guardadas al usarse.
 //     El modelo de Whisper lo guarda la propia biblioteca.
-const VERSION = "karaoke-app-v1.2.0-5";
+const VERSION = "karaoke-app-v1.2.0-7";
 const CACHE_AUDIO = "karaoke-audio";      // no se borra entre versiones
 const CACHE_EXTERNOS = "karaoke-externos";
 const APP = [
-  "./", "app.js", "ia.js", "ia-trabajador.js", "afinacion.js", "estilos.css", "manifest.webmanifest", "icono.png",
+  "./", "app.js", "ia.js", "ia-trabajador.js", "afinacion.js", "grabacion.js", "estilos.css", "manifest.webmanifest", "icono.png",
   "iconos/icono-192.png", "iconos/icono-512.png", "iconos/icono-maskable-512.png", "iconos/apple-touch-icon.png",
   "datos/canciones.json",
 ];

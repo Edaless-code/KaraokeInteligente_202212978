@@ -44,6 +44,7 @@ body {
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: inherit; text-decoration: none; }
 svg { width: 22px; height: 22px; fill: currentColor; flex: none; }
+[hidden] { display: none !important; }   /* lo oculto queda oculto aunque su clase le dé display */
 :focus-visible { outline: 2px solid var(--acento-texto); outline-offset: 2px; border-radius: 8px; }
 
 /* ------------------------------------------------------------- estructura */
@@ -209,6 +210,19 @@ select.campo { appearance: none; background-image: linear-gradient(45deg, transp
 .resultado-canto .nota { margin: 14px 0 16px; font-size: .85rem; }
 .resultado-canto .acciones { justify-content: center; margin: 0; }
 .resultado-canto .acciones .boton { flex: 1; min-height: 44px; }
+
+/* Grabar */
+.mini.grabar svg { fill: var(--acento-texto); width: 18px; height: 18px; }
+.mini.grabar.grabando { background: var(--acento-suave); }
+.mini.grabar.grabando svg { animation: latido 1.2s ease-in-out infinite; }
+@keyframes latido { 50% { opacity: .35; } }
+.chip.grabando { background: rgba(143,174,224,.12); color: var(--acento-texto); font-variant-numeric: tabular-nums; gap: 6px; }
+.chip.grabando::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--acento-texto); animation: latido 1.2s ease-in-out infinite; }
+.grabacion { display: grid; gap: 8px; margin: 6px 0 14px; }
+.grabacion audio { width: 100%; height: 40px; }
+.grabacion .acciones { margin: 0; justify-content: center; }
+.fila-grabacion + .grabacion { margin: -2px 0 6px; padding: 10px 14px; border-radius: 16px; background: var(--superficie); border: 1px solid var(--trazo); }
+.resultado-canto .etiqueta-campo { margin: 4px 0 6px; text-align: left; }
 
 /* Barra lateral agrupada como el menú de la consola */
 .nav-grupo { margin: 18px 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-3); }

@@ -37,6 +37,7 @@
         <p class="nav-grupo">Sesión</p>
         <a href="#programa" data-ruta="programa">Programa</a>
         <a href="#historial" data-ruta="historial">Historial</a>
+        <a href="#grabaciones" data-ruta="grabaciones">Grabaciones</a>
       </nav>
       <button class="boton secundario chico instalar" data-instalar hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2Zm7-3 5-5h-3V4h-4v8H7l5 5Z"/></svg><span>Instalar app</span>
@@ -52,7 +53,7 @@
       <a href="#biblioteca" data-ruta="biblioteca" data-grupo="cancion editar"><svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zm6 0h4v16h-4zm6.6.6 3.8-1.2 4 15.2-3.8 1.2z"/></svg><span>Biblioteca</span></a>
       <a href="#manual" data-ruta="manual"><svg viewBox="0 0 24 24"><path d="M9 11.2V7a2 2 0 1 1 4 0v4.2l4.6 1a2 2 0 0 1 1.5 2.3L18 21H9.5l-4-5.4a1.6 1.6 0 0 1 2.4-2.1L9 14.6z"/></svg><span>Manual</span></a>
       <a href="#automatico" data-ruta="automatico"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg><span>Automático</span></a>
-      <a href="#mas" data-ruta="mas" data-grupo="programa historial agregar papelera ajustes"><svg viewBox="0 0 24 24"><path d="M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg><span>Más</span></a>
+      <a href="#mas" data-ruta="mas" data-grupo="programa historial grabaciones agregar papelera ajustes"><svg viewBox="0 0 24 24"><path d="M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg><span>Más</span></a>
     </nav>
   </div>
 
@@ -63,6 +64,7 @@
         <svg viewBox="0 0 24 24"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z"/></svg>
       </button>
       <div class="escenario-titulo"><strong id="esc-nombre"></strong><span id="esc-sub"></span></div>
+      <span id="esc-grabando" class="chip grabando" hidden></span>
       <span id="esc-puntos" class="chip puntos" hidden title="Tu puntaje hasta ahora"></span>
       <span id="esc-estado" class="chip"></span>
     </header>

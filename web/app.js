@@ -6,6 +6,7 @@
 // pista o la escribe a partir del audio.
 import * as ia from "./ia.js";
 import * as afinacion from "./afinacion.js";
+import * as grabacion from "./grabacion.js";
 
 const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
 const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
@@ -496,6 +497,7 @@ class Reproductor {
     pasaAltos.connect(pasaBajos); pasaBajos.connect(this.quitar);
     this.quitar.connect(unir, 0, 0); this.quitar.connect(unir, 0, 1);   // −centro en ambos canales
     unir.connect(ctx.destination);
+    this.salida = unir;   // la mezcla que suena (para grabar la interpretación)
     this.ctx = ctx;
   }
   async reproducir() { this.preparar(); if (this.ctx?.state === "suspended") await this.ctx.resume(); await this.audio.play(); }
@@ -561,13 +563,15 @@ const ICON = {
   reloj: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></svg>`,
   ia: `<svg viewBox="0 0 24 24"><path d="M9.5 2 11 6.5 15.5 8 11 9.5 9.5 14 8 9.5 3.5 8 8 6.5 9.5 2Zm8 9 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM6 15l.8 2.2L9 18l-2.2.8L6 21l-.8-2.2L3 18l2.2-.8L6 15Z"/></svg>`,
   estrella: `<svg viewBox="0 0 24 24"><path d="M12 17.3 18.2 21l-1.6-7L22 9.2l-7.2-.6L12 2 9.2 8.6 2 9.2 7.4 14l-1.6 7z"/></svg>`,
+  grabar: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></svg>`,
+  detenerGrabacion: `<svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>`,
   mic: `<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>`,
 };
 
 function abrirEscenario(modo, cancion, linea = 0, { calificar = false } = {}) {
   cerrarEscenario(true);
   Object.assign(esc, { modo, cancion, linea, pausado: false, tiempos: null, aviso: "", estadoIA: "", palabras: {}, oido: [], sesion: Date.now(),
-    desfase: +guardado.leer("desfase", 0) || 0, calificar, calificador: null, resultadoMostrado: false });
+    desfase: +guardado.leer("desfase", 0) || 0, calificar, calificador: null, resultadoMostrado: false, grabadora: null, puntajeFinal: null });
   if (cancion) historial.iniciar(cancion, modo);
   $("#escenario").hidden = false;
   document.body.style.overflow = "hidden";
@@ -584,6 +588,9 @@ function cerrarEscenario(silencioso) {
     avisar(`Tu puntaje: ${r.puntaje} · ${"★".repeat(r.estrellas)}${"☆".repeat(5 - r.estrellas)}`);
   }
   esc.microfono?.detener(); esc.microfono = null; esc.calificador = null;
+  if (esc.grabadora?.grabando) terminarGrabacion(false);
+  esc.grabadora = null;
+  $("#esc-grabando").hidden = true;
   $("#resultado-canto")?.remove();
   $("#esc-puntos").hidden = true;
   esc.reproductor?.detener(); esc.reproductor = null;
@@ -629,7 +636,7 @@ function pintarEscenario() {
     isla.innerHTML = `
       <div class="barra-tiempo"><span id="t-actual">0:00</span><input id="t-barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición"><span id="t-total">0:00</span></div>
       <div class="isla-controles">
-        <button class="mini" data-accion="inicio" aria-label="Desde el inicio" title="Desde el inicio">${ICON.inicio}</button>
+        <button class="mini grabar" data-accion="grabar" id="b-grabar" aria-label="Grabar tu interpretación" title="Grabar tu interpretación" ${grabacion.sePuedeGrabar() ? "" : "hidden"}>${ICON.grabar}</button>
         <button class="mini" data-accion="menos5" aria-label="Regresar 5 segundos" title="−5 s (←)">${ICON.menos5}</button>
         <button class="redondo" data-accion="pausa" id="b-principal" aria-label="Pausa" title="Pausa (espacio)">${ICON.pausa}</button>
         <button class="mini" data-accion="mas5" aria-label="Adelantar 5 segundos" title="+5 s (→)">${ICON.mas5}</button>
@@ -714,6 +721,7 @@ function actualizarPista() {
   if (!r) return;
   const duracion = r.duracion, reloj_ = r.segundo, s = reloj_ + esc.desfase;   // desfase: [ y ] afinan la letra
   if (esc.calificador && esc.microfono && !r.pausado) escucharCantante(s);
+  if (esc.grabadora?.grabando) $("#esc-grabando").textContent = `Grabando ${reloj(esc.grabadora.segundos)}`;
   if (!esc.tiempos && duracion) esc.tiempos = c.tiempos || tiemposAproximados(c.lineas, duracion);
   $("#esc-sub").textContent = `${reloj(reloj_)} / ${reloj(duracion)}`;
   $("#t-actual").textContent = reloj(reloj_); $("#t-total").textContent = reloj(duracion);
@@ -747,6 +755,7 @@ function actualizarPista() {
     const linea = r.audio.ended ? c.lineas.length : actual;
     historial.avance(linea);
     if (r.audio.ended && esc.calificador && !esc.resultadoMostrado) mostrarResultado(c);
+    if (r.audio.ended && esc.grabadora?.grabando) terminarGrabacion(true);
     if (r.audio.ended && esc.interpretacion) historial.terminar(true);
     pintarLetra(c.lineas, linea, { conPalabras: true });
     pintarPalabras(c, linea, s);
@@ -777,6 +786,7 @@ async function empezarCalificacion(c, r) {
     if (esc.reproductor !== r) { microfono.detener(); return; }
     Object.assign(esc, { microfono, vozPista: voz, calificador: nuevoCalificador(esc.cancion, voz) });
     puntos.textContent = "♪ —";
+    if (grabacion.sePuedeGrabar() && !esc.grabadora) empezarGrabacion();
   } catch (e) {
     puntos.hidden = true;
     esc.aviso = `No se pudo usar el micrófono para calificarte (${e.message || e.name}). La canción sigue sin puntaje.`;
@@ -797,6 +807,7 @@ function escucharCantante(segundo) {
   }
 }
 function guardarPuntaje(c, r) {
+  esc.puntajeFinal = r.puntaje;
   if (esc.interpretacion) esc.interpretacion.puntaje = r.puntaje;
   const anterior = porId(c.id)?.mejorPuntaje ?? null;
   r.anterior = anterior;
@@ -837,6 +848,91 @@ function mostrarResultado(c) {
   };
   subir();
   caja.querySelector('[data-accion="otra-vez"]').focus();
+}
+
+// ---------------------------------------------- grabar la interpretación
+// Se guardan en el navegador (IndexedDB) las últimas 30, con su canción,
+// fecha, duración y puntaje.
+const MAX_GRABACIONES = 30;
+const grabaciones = {
+  leer: () => guardado.leer("grabaciones", []),
+  async guardar(c, { blob, duracion }, puntaje) {
+    const id = "g" + Date.now();
+    await archivos.guardar("grabacion:" + id, blob);
+    const lista = this.leer();
+    lista.unshift({ id, cancion: c.id, nombre: c.nombre, fecha: Date.now(), duracion, puntaje: puntaje ?? null, tipo: blob.type });
+    for (const vieja of lista.slice(MAX_GRABACIONES)) await archivos.borrar("grabacion:" + vieja.id);
+    guardado.escribir("grabaciones", lista.slice(0, MAX_GRABACIONES));
+    return lista[0];
+  },
+  async borrar(id) {
+    await archivos.borrar("grabacion:" + id);
+    guardado.escribir("grabaciones", this.leer().filter((g) => g.id !== id));
+  },
+  async url(id) { const b = await archivos.leer("grabacion:" + id); return b ? URL.createObjectURL(b) : null; },
+};
+const nombreDescarga = (g) => `Karaoke - ${g.nombre} - ${new Date(g.fecha).toISOString().slice(0, 16).replace("T", " ").replace(":", "h")}.${grabacion.extension(g.tipo || "")}`
+  .replace(/[\\/:*?"<>|]/g, "");
+function htmlGrabacion(g, url) {
+  return `
+    <div class="grabacion" data-grabacion="${g.id}">
+      <audio controls preload="metadata" src="${url}"></audio>
+      <div class="acciones">
+        <a class="boton secundario chico" href="${url}" download="${escapar(nombreDescarga(g))}">${ICON.importar}<span>Descargar</span></a>
+        <button class="boton fantasma chico" data-borrar-grabacion="${g.id}">${ICON.basura}<span>Eliminar</span></button>
+      </div>
+    </div>`;
+}
+async function empezarGrabacion() {
+  const r = esc.reproductor;
+  if (!r || esc.grabadora?.grabando) return;
+  r.preparar();
+  if (!r.ctx || !r.salida) { avisar("Este navegador no permite grabar"); return; }
+  const grabadora = new grabacion.Grabadora(r.ctx, r.salida);
+  try {
+    await grabadora.iniciar();
+  } catch (e) {
+    avisar(`No se pudo grabar: ${e.message || e.name}`);
+    return;
+  }
+  if (esc.reproductor !== r) { grabadora.detener(); return; }
+  esc.grabadora = grabadora;
+  const boton = $("#b-grabar");
+  if (boton) { boton.classList.add("grabando"); boton.innerHTML = ICON.detenerGrabacion; boton.setAttribute("aria-label", "Detener la grabación"); }
+  const chip = $("#esc-grabando"); chip.hidden = false; chip.textContent = "Grabando 0:00";
+}
+// Termina la grabación y la guarda. `mostrar`: enseñarla en el escenario
+// (junto al puntaje si lo hay); si se cerró el escenario, solo se avisa.
+async function terminarGrabacion(mostrar) {
+  const grabadora = esc.grabadora, c = esc.cancion, puntaje = esc.puntajeFinal;
+  if (!grabadora) return;
+  esc.grabadora = null;
+  $("#esc-grabando").hidden = true;
+  const boton = $("#b-grabar");
+  if (boton) { boton.classList.remove("grabando"); boton.innerHTML = ICON.grabar; boton.setAttribute("aria-label", "Grabar tu interpretación"); }
+  const resultado = await grabadora.detener();
+  if (!c || resultado.duracion < 2 || !resultado.blob.size) return;   // un toque por error
+  const g = await grabaciones.guardar(c, resultado, puntaje);
+  if (!mostrar || $("#escenario").hidden) { avisar("Tu grabación quedó en Más → Grabaciones"); return; }
+  const url = await grabaciones.url(g.id);
+  const tarjeta = $("#resultado-canto");
+  if (tarjeta) {
+    tarjeta.querySelector(".acciones").insertAdjacentHTML("beforebegin", `<p class="etiqueta-campo">Tu grabación</p>${htmlGrabacion(g, url)}`);
+    return;
+  }
+  const caja = document.createElement("div");
+  caja.id = "resultado-canto";
+  caja.className = "resultado-canto";
+  caja.setAttribute("role", "dialog");
+  caja.setAttribute("aria-label", "Tu grabación");
+  caja.innerHTML = `
+    <p class="antetitulo">Tu grabación · ${escapar(c.nombre)}</p>
+    ${htmlGrabacion(g, url)}
+    <div class="acciones">
+      <button class="boton secundario" data-accion="cerrar-tarjeta">Seguir</button>
+      <button class="boton secundario" data-accion="cerrar">Cerrar</button>
+    </div>`;
+  $("#escenario").append(caja);
 }
 
 // "Afinar": la canción vuelve al inicio y cada toque marca el inicio de una línea.
@@ -891,6 +987,8 @@ function accion(nombre) {
   const r = esc.reproductor;
   switch (nombre) {
     case "cerrar": cerrarEscenario(); return;
+    case "cerrar-tarjeta": $("#resultado-canto")?.remove(); return;
+    case "grabar": esc.grabadora?.grabando ? terminarGrabacion(true) : empezarGrabacion(); return;
     case "otra-vez": { const c = esc.cancion; cerrarEscenario(true); abrirEscenario("pista", c, 0, { calificar: true }); return; }
     case "menos5": r?.mover(-5); return;
     case "mas5": r?.mover(5); return;
@@ -1010,6 +1108,29 @@ function seguir(oido) {
   }
   if (mejor !== esc.linea && valor >= 0.5) { esc.linea = mejor; actualizarManual(); }
 }
+
+// Las grabaciones WebM de Chrome no traen su duración (sale "Infinity") y la
+// barra del reproductor no deja adelantar: se pide un punto lejano para que el
+// navegador la calcule y se vuelve al inicio.
+document.addEventListener("loadedmetadata", (e) => {
+  const a = e.target;
+  if (!(a instanceof HTMLAudioElement) || !a.closest(".grabacion") || a.duration !== Infinity) return;
+  const volver = () => { a.removeEventListener("durationchange", volver); a.currentTime = 0; };
+  a.addEventListener("durationchange", volver);
+  a.currentTime = 1e7;
+}, true);
+
+// Eliminar una grabación (desde el escenario o desde Grabaciones)
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-borrar-grabacion]");
+  if (!b) return;
+  const id = b.dataset.borrarGrabacion;
+  if (!(await dialogo({ titulo: "¿Eliminar esta grabación?", aceptar: "Eliminar", peligro: true }))) return;
+  await grabaciones.borrar(id);
+  document.querySelector(`[data-grabacion="${id}"]`)?.remove();
+  if (location.hash.startsWith("#grabaciones") && $("#escenario").hidden) navegar();
+  avisar("Grabación eliminada");
+});
 
 // Eventos del escenario
 $("#escenario").addEventListener("click", (e) => {
@@ -1349,10 +1470,24 @@ const vistas = {
       : `<p class="vacio">Todavía no hay interpretaciones. Lo que se cante en cualquier modo aparecerá aquí.</p>`}`;
   },
 
+  async grabaciones() {
+    const lista = grabaciones.leer();
+    contenido.innerHTML = `
+      <div class="encabezado-vista"><div><p class="antetitulo">Sesión</p><h1>Grabaciones</h1></div></div>
+      <p class="nota">Tus interpretaciones grabadas (la voz con la pista). Se guardan en este navegador; las últimas ${MAX_GRABACIONES}. Para grabar, usa el botón redondo de la isla o «Cantar y calificarme».</p>
+      ${lista.length ? `<div class="lista">${lista.map((g) => `
+        <div class="fila-lista fila-grabacion" data-fila-grabacion="${g.id}">
+          <div><strong>${escapar(g.nombre)}</strong><span class="nota">${new Date(g.fecha).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" })} · ${reloj(g.duracion)}</span></div>
+          ${g.puntaje != null ? `<span class="chip puntaje">${ICON.estrella} ${g.puntaje}</span>` : ""}
+          <button class="boton secundario chico" data-escuchar-grabacion="${g.id}">${ICON.play}<span>Escuchar</span></button>
+        </div>`).join("")}</div>` : `<p class="vacio">Todavía no hay grabaciones.</p>`}`;
+  },
+
   mas() {
     const enlaces = [
       ["#programa", ICON.lista, "Programa del cantante", "Las canciones de esta noche, en orden"],
       ["#historial", ICON.reloj, "Historial", "Canciones cantadas y estadísticas"],
+      ["#grabaciones", ICON.grabar, "Grabaciones", "Escucha y descarga tus interpretaciones"],
       ["#agregar", ICON.importar, "Agregar canciones", "Escribir, pegar o importar un .txt"],
       ["#papelera", ICON.basura, `Papelera${papelera.length ? ` (${papelera.length})` : ""}`, "Recuperar canciones eliminadas"],
     ];
@@ -1560,7 +1695,15 @@ contenido.addEventListener("click", async (e) => {
       await cargarCanciones(); navegar(); avisar("Papelera vacía");
     }
   } else if (t("[data-exportar]")) exportarBiblioteca();
-  else if (t("[data-sincronizar]")) {
+  else if (t("[data-escuchar-grabacion]")) {
+    const id = t("[data-escuchar-grabacion]").dataset.escucharGrabacion;
+    const fila = contenido.querySelector(`[data-fila-grabacion="${id}"]`), g = grabaciones.leer().find((x) => x.id === id);
+    const url = await grabaciones.url(id);
+    if (!url || !g) { avisar("No se encontró la grabación"); return; }
+    fila.querySelector("[data-escuchar-grabacion]").remove();
+    fila.insertAdjacentHTML("afterend", htmlGrabacion(g, url));
+    fila.nextElementSibling.querySelector("audio").play().catch(() => {});
+  } else if (t("[data-sincronizar]")) {
     const c = porId(t("[data-sincronizar]").dataset.sincronizar);
     t("[data-sincronizar]").remove();
     sincronizarDesdeDetalle(c);
