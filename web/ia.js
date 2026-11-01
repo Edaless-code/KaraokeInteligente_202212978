@@ -144,7 +144,8 @@ export function recortarLargas(oidas) {
     // solo después de un silencio de verdad: al inicio o tras una pausa (si Whisper
     // juntó una frase repetida en una sola palabra larga, recortarla la movería
     // a la segunda vez que se canta)
-    const empieza = !anterior || p.inicio - anterior.fin > 0.8;
+    // (o si dura más de 4 s: ninguna palabra cantada empieza tan antes de sonar)
+    const empieza = !anterior || p.inicio - anterior.fin > 0.8 || p.fin - p.inicio > 4;
     if (!empieza || p.fin - p.inicio <= Math.max(1.0, maxima * 1.5)) continue;
     const siguiente = r[i + 1];
     if (siguiente && siguiente.fin - siguiente.inicio > maxima) {
