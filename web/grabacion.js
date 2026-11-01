@@ -18,9 +18,10 @@ export class Grabadora {
     this.tipo = tipoGrabacion();
   }
 
-  async iniciar() {
+  async iniciar(dispositivo = "") {
     this.flujoMic = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        ...(dispositivo ? { deviceId: { exact: dispositivo } } : {}) },
     });
     const ctx = this.contexto;
     this.destino = ctx.createMediaStreamDestination();

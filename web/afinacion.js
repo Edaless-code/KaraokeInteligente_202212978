@@ -43,6 +43,9 @@ export function yin(muestras, frecuencia, { minimo = 80, maximo = 1000, umbral =
 }
 
 export const aMidi = (hz) => 69 + 12 * Math.log2(hz / 440);
+const NOTAS = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
+// 69 → "La 4" (notación con octava, como en el piano: el La de 440 Hz es La 4)
+export const nombreNota = (midi) => { const n = Math.round(midi); return `${NOTAS[((n % 12) + 12) % 12]} ${Math.floor(n / 12) - 1}`; };
 export function rms(muestras) {
   let s = 0;
   for (let i = 0; i < muestras.length; i++) s += muestras[i] * muestras[i];
@@ -160,9 +163,11 @@ export async function senalDeVoz(blob) {
 
 // El micrófono de quien canta: cada lectura da si hay voz y su nota.
 export class Microfono {
-  async iniciar() {
+  // `dispositivo`: deviceId del micrófono elegido ("" = el predeterminado).
+  async iniciar(dispositivo = "") {
     this.flujo = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true,
+        ...(dispositivo ? { deviceId: { exact: dispositivo } } : {}) },
     });
     this.contexto = new AudioContext();
     const fuente = this.contexto.createMediaStreamSource(this.flujo);

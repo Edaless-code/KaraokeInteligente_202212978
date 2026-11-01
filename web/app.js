@@ -9,7 +9,9 @@ import * as afinacion from "./afinacion.js";
 import * as grabacion from "./grabacion.js";
 
 const ADELANTO = 0.15;              // la línea entra junto con la voz (lo justo para su animación)
-const ESPERA_ISLA = 2600;           // ms sin mover el mouse para ocultar la isla
+// Ajustes (vista #ajustes): se guardan en el navegador.
+const ajuste = (clave, omision) => guardado.leer("ajuste-" + clave, omision);
+const esperaIsla = () => ({ corta: 2600, larga: 6000, nunca: Infinity }[ajuste("isla", "corta")] ?? 2600);   // ms sin mover el mouse
 // Idioma del reconocimiento de voz del navegador (escucha uno a la vez).
 const VOZ_NAVEGADOR = { es: "es-MX", en: "en-US" };
 const NOMBRE_IDIOMA = { es: "Español", en: "Inglés" };
@@ -276,6 +278,82 @@ async function sincronizarDesdeDetalle(c) {
     avisar(`No se pudo sincronizar: ${e.message}`);
   }
   if (location.hash.includes(c.id)) navegar();
+}
+
+// ------------------------------------------------------------------ ajustes
+function aplicarAjustes() {
+  document.documentElement.style.setProperty("--escala-letra", ajuste("tamano-letra", "1"));
+}
+const CLAVES_EXTRA = { "idioma-voz": "idioma-voz", "modelo-ia": "modelo-ia" };   // ajustes que ya tenían su propia clave
+function guardarAjuste(clave, valor) {
+  guardado.escribir(CLAVES_EXTRA[clave] || "ajuste-" + clave, valor);
+  aplicarAjustes();
+}
+let pruebaMic = null;
+async function probarMicrofono() {
+  detenerPruebaMic();
+  const microfono = new afinacion.Microfono();
+  try {
+    await microfono.iniciar(ajuste("microfono", ""));
+  } catch (e) {
+    avisar(`No se pudo abrir el micrófono: ${e.message || e.name}`);
+    return;
+  }
+  pruebaMic = { microfono, raf: 0, ultimaNota: 0 };
+  const boton = $("#aj-probar");
+  if (boton) boton.innerHTML = `${ICON.detenerGrabacion} Detener la prueba`;
+  // con el permiso ya dado, los micrófonos aparecen con su nombre
+  if ($("#aj-microfono") && [...$("#aj-microfono").options].some((o) => o.value && o.textContent.startsWith("Micrófono "))) navegar();
+  const paso = () => {
+    if (!pruebaMic || !$("#aj-nivel")) return detenerPruebaMic();
+    const { nivel, nota } = microfono.leer();
+    $("#aj-nivel").style.width = `${Math.min(100, nivel * 600)}%`;
+    if (nota !== null) { $("#aj-nota").textContent = `${afinacion.nombreNota(nota)} · ${Math.round(440 * Math.pow(2, (nota - 69) / 12))} Hz`; pruebaMic.ultimaNota = performance.now(); }
+    else if (performance.now() - pruebaMic.ultimaNota > 800) $("#aj-nota").textContent = nivel > 0.012 ? "Sin nota clara" : "—";
+    pruebaMic.raf = requestAnimationFrame(paso);
+  };
+  paso();
+}
+function detenerPruebaMic() {
+  if (!pruebaMic) return;
+  cancelAnimationFrame(pruebaMic.raf);
+  pruebaMic.microfono.detener();
+  pruebaMic = null;
+  const boton = $("#aj-probar");
+  if (boton) boton.innerHTML = `${ICON.mic} Probar el micrófono`;
+  if ($("#aj-nivel")) $("#aj-nivel").style.width = "0";
+}
+async function mostrarEspacio() {
+  const el = $("#aj-espacio");
+  if (!el) return;
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    el.textContent = `${(usage / 1e6).toFixed(0)} MB de ${(quota / 1e9).toFixed(1)} GB disponibles en este navegador`;
+  } catch { el.textContent = "No disponible en este navegador"; }
+}
+function descargarRespaldo() {
+  const datos = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const clave = localStorage.key(i);
+    if (clave.startsWith("karaoke:")) datos[clave.slice(8)] = guardado.leer(clave.slice(8), null);
+  }
+  const texto = JSON.stringify({ app: "Karaoke Inteligente", version: 1, fecha: new Date().toISOString(), datos }, null, 1);
+  const url = URL.createObjectURL(new Blob([texto], { type: "application/json" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `respaldo-karaoke-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  avisar("Respaldo descargado");
+}
+async function restaurarRespaldo(archivo) {
+  let respaldo;
+  try { respaldo = JSON.parse(await archivo.text()); } catch { avisar("Ese archivo no es un respaldo válido"); return; }
+  if (respaldo?.app !== "Karaoke Inteligente" || typeof respaldo.datos !== "object") { avisar("Ese archivo no es un respaldo del Karaoke"); return; }
+  if (!(await dialogo({ titulo: "¿Restaurar el respaldo?", mensaje: `Del ${new Date(respaldo.fecha).toLocaleString("es")}. Reemplaza tus canciones, programa, historial y ajustes actuales.`, aceptar: "Restaurar", peligro: true }))) return;
+  for (const [clave, valor] of Object.entries(respaldo.datos)) guardado.escribir(clave, valor);
+  await cargarCanciones();
+  aplicarAjustes();
+  avisar("Respaldo restaurado");
+  navegar();
 }
 
 // ------------------------------------------ editar, borrar y la papelera
@@ -667,7 +745,7 @@ function pintarEscenario() {
 // entra donde va el cantante, con la voz del artista bajada.
 // `entrada`: { linea, fraccion } cuando el modo automático reconoció la canción
 // (la pista entra donde va el cantante, aunque aún no tenga tiempos exactos).
-async function iniciarPista(desde = 0, voz = 1, entrada = null) {
+async function iniciarPista(desde = 0, voz = +ajuste("voz-inicial", 1) || 1, entrada = null) {
   const c = esc.cancion, url = await urlAudio(c);
   if (!url) { pintarLetra([], 0, { actual: "Esta canción no tiene pista de audio", siguiente: "Agrégale un MP3 desde «Agregar canción»." }); return; }
   const r = esc.reproductor = new Reproductor(url);
@@ -780,13 +858,13 @@ async function empezarCalificacion(c, r) {
   esc.avisoHasta = performance.now() + 7000;
   try {
     const microfono = new afinacion.Microfono();
-    await microfono.iniciar();
+    await microfono.iniciar(ajuste("microfono", ""));
     if (esc.reproductor !== r) { microfono.detener(); return; }
     const voz = await afinacion.senalDeVoz(await blobDeAudio(c));
     if (esc.reproductor !== r) { microfono.detener(); return; }
     Object.assign(esc, { microfono, vozPista: voz, calificador: nuevoCalificador(esc.cancion, voz) });
     puntos.textContent = "♪ —";
-    if (grabacion.sePuedeGrabar() && !esc.grabadora) empezarGrabacion();
+    if (grabacion.sePuedeGrabar() && !esc.grabadora && ajuste("grabar-al-calificar", true)) empezarGrabacion();
   } catch (e) {
     puntos.hidden = true;
     esc.aviso = `No se pudo usar el micrófono para calificarte (${e.message || e.name}). La canción sigue sin puntaje.`;
@@ -890,7 +968,7 @@ async function empezarGrabacion() {
   if (!r.ctx || !r.salida) { avisar("Este navegador no permite grabar"); return; }
   const grabadora = new grabacion.Grabadora(r.ctx, r.salida);
   try {
-    await grabadora.iniciar();
+    await grabadora.iniciar(ajuste("microfono", ""));
   } catch (e) {
     avisar(`No se pudo grabar: ${e.message || e.name}`);
     return;
@@ -1082,7 +1160,7 @@ function entrarConPista(cancion, linea) {
   if (cancion.tiempos && cancion.tiempos.length !== cancion.lineas.length) cancion.tiempos = null;
   const rec = esc.reconocedor; esc.reconocedor = null;
   try { rec?.stop(); } catch { /* ya detenido */ }
-  Object.assign(esc, { modo: "pista", tiempos: null, pausado: false, calificar: true });
+  Object.assign(esc, { modo: "pista", tiempos: null, pausado: false, calificar: ajuste("calificar-automatico", true) });
   pintarEscenario();
   // sin tiempos exactos entra con los aproximados y la IA los afina mientras suena
   iniciarPista(0, VOZ_AL_RECONOCER, { linea, fraccion: 0.6 });
@@ -1175,7 +1253,8 @@ function mostrarIsla() {
 }
 function programarOcultarIsla() {
   clearTimeout(temporizadorIsla);
-  temporizadorIsla = setTimeout(() => ocultarIsla(), ESPERA_ISLA);
+  if (esperaIsla() === Infinity) return;
+  temporizadorIsla = setTimeout(() => ocultarIsla(), esperaIsla());
 }
 function ocultarIsla(forzar = false) {
   const escenario = $("#escenario"), isla = $("#isla");
@@ -1483,11 +1562,90 @@ const vistas = {
         </div>`).join("")}</div>` : `<p class="vacio">Todavía no hay grabaciones.</p>`}`;
   },
 
+  async ajustes() {
+    const opcion = (clave, valor, actual, texto) => `<button role="radio" data-ajuste="${clave}" data-valor="${valor}" aria-checked="${actual === valor}" class="${actual === valor ? "activo" : ""}">${texto}</button>`;
+    const segmentos = (clave, actual, opciones) => `<div class="niveles segmentos" role="radiogroup">${opciones.map(([v, t]) => opcion(clave, v, actual, t)).join("")}</div>`;
+    const casilla = (clave, omision, texto) => `<label class="casilla"><input type="checkbox" data-casilla="${clave}" ${ajuste(clave, omision) ? "checked" : ""}> ${texto}</label>`;
+    let microfonos = [];
+    try { microfonos = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput"); } catch { /* sin permiso */ }
+    const elegido = ajuste("microfono", "");
+    contenido.innerHTML = `
+      <p class="antetitulo">Karaoke inteligente</p>
+      <h1>Ajustes</h1>
+      <section class="tarjeta ajustes">
+        <h2>Letra</h2>
+        <div class="ajuste"><div><strong>Desfase de la letra</strong><span class="nota">Si la letra va antes o después de la voz. También con las teclas [ y ] al cantar.</span></div>
+          <div class="deslizador"><input type="range" id="aj-desfase" min="-2" max="2" step="0.1" value="${+guardado.leer("desfase", 0) || 0}"><output id="aj-desfase-valor"></output></div></div>
+        <div class="ajuste"><div><strong>Tamaño de la letra</strong><span class="nota">Más grande para verla de lejos o en un proyector.</span></div>
+          ${segmentos("tamano-letra", ajuste("tamano-letra", "1"), [["1", "Normal"], ["1.2", "Grande"], ["1.45", "Muy grande"]])}</div>
+      </section>
+      <section class="tarjeta ajustes">
+        <h2>Reproducción</h2>
+        <div class="ajuste"><div><strong>Voz del artista al empezar</strong><span class="nota">Con «Cantar y calificarme» siempre empieza al 25 %.</span></div>
+          ${segmentos("voz-inicial", String(ajuste("voz-inicial", 1)), NIVELES_VOZ.map((n) => [String(n), `${n * 100} %`]))}</div>
+        <div class="ajuste"><div><strong>Ocultar la isla de controles</strong><span class="nota">Cuando no se mueve el mouse.</span></div>
+          ${segmentos("isla", ajuste("isla", "corta"), [["corta", "A los 3 s"], ["larga", "A los 6 s"], ["nunca", "Nunca"]])}</div>
+      </section>
+      <section class="tarjeta ajustes">
+        <h2>Modo automático y puntuación</h2>
+        <div class="ajuste"><div><strong>Idioma en que se canta</strong><span class="nota">El navegador escucha un idioma a la vez.</span></div>
+          ${segmentos("idioma-voz", idiomaVoz(), [["es", "Español"], ["en", "Inglés"]])}</div>
+        <div class="casillas">
+          ${casilla("calificar-automatico", true, "Calificar cuando el modo automático pone la pista")}
+          ${casilla("grabar-al-calificar", true, "Grabar la interpretación al calificar")}
+        </div>
+      </section>
+      <section class="tarjeta ajustes">
+        <h2>Micrófono</h2>
+        <div class="ajuste"><div><strong>Micrófono</strong><span class="nota">Para calificar y grabar. El modo automático usa el del sistema.</span></div>
+          <select class="campo" id="aj-microfono">
+            <option value="">El predeterminado</option>
+            ${microfonos.filter((d) => d.deviceId && d.deviceId !== "default").map((d, i) => `<option value="${escapar(d.deviceId)}" ${d.deviceId === elegido ? "selected" : ""}>${escapar(d.label || `Micrófono ${i + 1}`)}</option>`).join("")}
+          </select></div>
+        <div class="prueba-mic">
+          <button class="boton secundario" id="aj-probar">${ICON.mic} Probar el micrófono</button>
+          <div class="medidor" aria-label="Nivel del micrófono"><span id="aj-nivel"></span></div>
+          <output id="aj-nota" class="nota-detectada">—</output>
+        </div>
+        <p class="nota" style="margin:0">Canta o habla: la barra muestra el volumen y a la derecha la nota que se detecta.</p>
+      </section>
+      <section class="tarjeta ajustes">
+        <h2>Inteligencia artificial</h2>
+        <div class="ajuste"><div><strong>Modelo</strong><span class="nota">Para sincronizar letras y escribirlas desde el audio.</span></div>
+          ${segmentos("modelo-ia", modeloIA(), Object.entries(ia.MODELOS).map(([k, m]) => [k, m.nombre]))}</div>
+        <div class="ajuste"><div><strong>Espacio usado</strong><span class="nota" id="aj-espacio">Calculando…</span></div>
+          <button class="boton fantasma chico" id="aj-borrar-ia">${ICON.basura}<span>Borrar los modelos descargados</span></button></div>
+      </section>
+      <section class="tarjeta ajustes">
+        <h2>Respaldo</h2>
+        <p class="nota">Tus canciones, ediciones, programa, historial y ajustes en un archivo (sin las pistas ni las grabaciones, que pesan mucho).</p>
+        <div class="acciones" style="margin:0">
+          <button class="boton secundario chico" id="aj-respaldo">${ICON.exportar}<span>Descargar respaldo</span></button>
+          <label class="boton secundario chico">${ICON.importar}<span>Restaurar un respaldo</span><input type="file" id="aj-restaurar" accept=".json,application/json" hidden></label>
+        </div>
+      </section>`;
+    const desfase = $("#aj-desfase"), valor = $("#aj-desfase-valor");
+    const mostrarDesfase = () => { const v = +desfase.value; valor.textContent = v === 0 ? "Junto con la voz" : `${Math.abs(v).toFixed(1)} s ${v > 0 ? "antes" : "después"}`; };
+    mostrarDesfase();
+    desfase.addEventListener("input", () => { guardado.escribir("desfase", +desfase.value); mostrarDesfase(); });
+    $("#aj-microfono").addEventListener("change", (e) => { guardado.escribir("ajuste-microfono", e.target.value); if (pruebaMic) probarMicrofono(); });
+    $("#aj-probar").addEventListener("click", () => (pruebaMic ? detenerPruebaMic() : probarMicrofono()));
+    $("#aj-respaldo").addEventListener("click", descargarRespaldo);
+    $("#aj-restaurar").addEventListener("change", (e) => e.target.files[0] && restaurarRespaldo(e.target.files[0]));
+    $("#aj-borrar-ia").addEventListener("click", async () => {
+      if (!(await dialogo({ titulo: "¿Borrar los modelos de IA?", mensaje: "Se vuelven a descargar la próxima vez que se usen.", aceptar: "Borrar", peligro: true }))) return;
+      for (const nombre of await caches.keys()) if (nombre.includes("transformers")) await caches.delete(nombre);
+      avisar("Modelos borrados"); mostrarEspacio();
+    });
+    mostrarEspacio();
+  },
+
   mas() {
     const enlaces = [
       ["#programa", ICON.lista, "Programa del cantante", "Las canciones de esta noche, en orden"],
       ["#historial", ICON.reloj, "Historial", "Canciones cantadas y estadísticas"],
       ["#grabaciones", ICON.grabar, "Grabaciones", "Escucha y descarga tus interpretaciones"],
+      ["#ajustes", ICON.afinar, "Ajustes", "Letra, micrófono, IA y respaldo"],
       ["#agregar", ICON.importar, "Agregar canciones", "Escribir, pegar o importar un .txt"],
       ["#papelera", ICON.basura, `Papelera${papelera.length ? ` (${papelera.length})` : ""}`, "Recuperar canciones eliminadas"],
     ];
@@ -1661,6 +1819,7 @@ function activarFormulario(c) {
 
 // ------------------------------------------------------------ navegación
 async function navegar() {
+  if (!location.hash.startsWith("#ajustes")) detenerPruebaMic();
   const [ruta, consulta] = (location.hash.slice(1) || "inicio").split("?");
   const parametros = new URLSearchParams(consulta || "");
   const vista = vistas[ruta] || vistas.inicio;
@@ -1695,7 +1854,14 @@ contenido.addEventListener("click", async (e) => {
       await cargarCanciones(); navegar(); avisar("Papelera vacía");
     }
   } else if (t("[data-exportar]")) exportarBiblioteca();
-  else if (t("[data-escuchar-grabacion]")) {
+  else if (t("[data-ajuste]")) {
+    const b = t("[data-ajuste]");
+    guardarAjuste(b.dataset.ajuste, b.dataset.ajuste === "voz-inicial" ? +b.dataset.valor : b.dataset.valor);
+    b.parentElement.querySelectorAll("[data-ajuste]").forEach((x) => { x.classList.toggle("activo", x === b); x.setAttribute("aria-checked", String(x === b)); });
+  } else if (t("[data-casilla]")) {
+    const c = t("[data-casilla]");
+    guardarAjuste(c.dataset.casilla, c.checked);
+  } else if (t("[data-escuchar-grabacion]")) {
     const id = t("[data-escuchar-grabacion]").dataset.escucharGrabacion;
     const fila = contenido.querySelector(`[data-fila-grabacion="${id}"]`), g = grabaciones.leer().find((x) => x.id === id);
     const url = await grabaciones.url(id);
@@ -1777,6 +1943,7 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-instalar
 window.addEventListener("offline", () => avisar("Sin conexión: el karaoke sigue funcionando (la IA solo si ya se descargó)"));
 window.addEventListener("online", () => avisar("De nuevo en línea"));
 
+aplicarAjustes();
 await cargarCanciones();
 navegar();
 mostrarInstalar();
