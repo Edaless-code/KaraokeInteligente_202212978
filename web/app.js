@@ -317,29 +317,30 @@ function pintarEscenario() {
   const isla = $("#isla");
   if (esc.modo === "pista") {
     isla.innerHTML = `
-      <div class="isla-fila">
-        <button class="redondo" data-accion="pausa" id="b-principal" aria-label="Pausa" title="Pausa (espacio)">${ICON.pausa}</button>
+      <div class="barra-tiempo"><span id="t-actual">0:00</span><input id="t-barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición"><span id="t-total">0:00</span></div>
+      <div class="isla-controles">
+        <button class="mini" data-accion="inicio" aria-label="Desde el inicio" title="Desde el inicio">${ICON.inicio}</button>
         <button class="mini" data-accion="menos5" aria-label="Regresar 5 segundos" title="−5 s (←)">${ICON.menos5}</button>
+        <button class="redondo" data-accion="pausa" id="b-principal" aria-label="Pausa" title="Pausa (espacio)">${ICON.pausa}</button>
         <button class="mini" data-accion="mas5" aria-label="Adelantar 5 segundos" title="+5 s (→)">${ICON.mas5}</button>
-        <div class="barra-tiempo"><span id="t-actual">0:00</span><input id="t-barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición"><span id="t-total">0:00</span></div>
-        <div class="niveles" role="group" aria-label="Voz del artista" title="Voz del artista: al bajarla se escucha mejor a quien canta">
-          <span class="niveles-icono" aria-hidden="true">${ICON.voz}</span>${NIVELES_VOZ.map((n) => `<button data-voz="${n}" class="${n === 1 ? "activo" : ""}" aria-label="Voz del artista al ${n * 100} %">${n * 100}</button>`).join("")}
-        </div>
         <button class="mini" data-accion="sincronizar" aria-label="Afinar la sincronía" title="Afinar: marca con toques el inicio de cada línea">${ICON.afinar}</button>
+      </div>
+      <div class="niveles" role="group" aria-label="Voz del artista" title="Voz del artista: al bajarla se escucha mejor a quien canta">
+        <span class="niveles-icono" aria-hidden="true">${ICON.voz}</span>${NIVELES_VOZ.map((n) => `<button data-voz="${n}" class="${n === 1 ? "activo" : ""}" aria-label="Voz del artista al ${n * 100} %">${n * 100} %</button>`).join("")}
       </div>`;
     const barra = $("#t-barra");
     barra.addEventListener("input", () => esc.reproductor && esc.reproductor.ir(barra.value / 100 * esc.reproductor.duracion));
     barra.addEventListener("change", () => barra.blur());   // que la isla se pueda ocultar después
   } else {
     isla.innerHTML = `
-      <div class="isla-fila">
+      <div class="isla-controles cuadricula">
         <button class="mini con-texto" data-accion="atras" title="Atrás (A)">${ICON.atras}<span>Atrás</span></button>
         <button class="mini con-texto" data-accion="igual" title="Igual (I)">${ICON.igual}<span>Igual</span></button>
         <button class="mini con-texto" data-accion="repetir" title="Repetir (R)">${ICON.repetir}<span>Repetir</span></button>
         <button class="mini con-texto" data-accion="pausa" id="b-pausa" title="Pausa (G / S)">${ICON.pausa}<span>Pausa</span></button>
         ${esc.modo === "automatico" ? `<button class="mini con-texto idioma" data-accion="idioma" id="b-idioma" title="Idioma en que se canta (L)" aria-label="Cambiar idioma"><b>${idiomaVoz().toUpperCase()}</b><span>${NOMBRE_IDIOMA[idiomaVoz()]}</span></button>` : ""}
-        <button class="boton ${esc.modo === "automatico" ? "automatico" : ""}" data-accion="continuar" title="C / Enter">${ICON.siguiente} ${esc.modo === "automatico" ? "Siguiente línea" : "Continuar"}</button>
-      </div>`;
+      </div>
+      <button class="boton ${esc.modo === "automatico" ? "automatico" : ""}" data-accion="continuar" title="C / Enter">${ICON.siguiente} ${esc.modo === "automatico" ? "Siguiente línea" : "Continuar"}</button>`;
     actualizarManual();
   }
 }
